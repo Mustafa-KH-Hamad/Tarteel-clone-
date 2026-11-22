@@ -114,11 +114,10 @@ function renderPage(p, side) {
     for (let i = ay.w0; i < ay.w1; i++) {
       const w = words[i], el = document.createElement("span");
       el.className = "w" + (w.state ? " " + w.state : ""); el.textContent = w.text; el.dataset.i = i;
-      if (w.state && w.state !== "ok" && settings.reveal) el.classList.add("reveal");
-      w.el = el; rendered.push(i); body.append(el, " ");
+      w.el = el; decorate(w); rendered.push(i); body.append(el, " ");
     }
     const end = document.createElement("span"); end.className = "aya-end"; end.textContent = arNum(ay.a + 1);
-    body.append(end, " ");
+    ay.endEl = end; ayahBadge(g); body.append(end, " ");
   }
   return page;
 }
@@ -127,7 +126,7 @@ function showPage(p) {
   p = Math.min(604, Math.max(1, p));
   const pages = spreadFor(p);
   if (pages.join() === shownPages.join()) return;
-  rendered.forEach(i => words[i].el = null); rendered = []; curEl = null;
+  rendered.forEach(i => { words[i].el = null; ayahs[words[i].g].endEl = null; }); rendered = []; curEl = null;
   const book = $("book"); book.innerHTML = "";
   pages.forEach((pg, k) => book.append(renderPage(pg, pages.length === 1 ? "single" : k === 0 ? "right" : "left")));
   shownPages = pages;
@@ -141,10 +140,11 @@ let ptr = 0, startPtr = 0, stats, mistakes, freeHeard = 0, pending = [], touched
 function resetStats() { stats = { ok: 0, bad: 0, skip: 0 }; mistakes = []; freeHeard = 0; pending = []; }
 
 function setStart(i) {
-  touched.forEach(j => { words[j].state = ""; if (words[j].el) words[j].el.className = "w"; });
-  touched.clear(); resetStats();
+  const gs = new Set();
+  touched.forEach(j => { const w = words[j]; w.state = ""; w.heard = ""; decorate(w); gs.add(w.g); });
+  touched.clear(); resetStats(); gs.forEach(ayahBadge); renderMistakes();
   ptr = startPtr = Math.max(0, Math.min(i, words.length - 1));
-  $("mistakeList").innerHTML = ""; $("heard").textContent = "";
+  $("heard").textContent = "";
   store.set("last", ptr);
   paint(true);
 }
@@ -198,25 +198,63 @@ function beep() {
   } catch {}
 }
 
+// Word appearance: colour by state, tooltip saying what went wrong.
+function decorate(w, pop) {
+  const el = w.el; if (!el) return;
+  el.className = "w" + (w.state ? " " + w.state : "") + (w.state && w.state !== "ok" && settings.reveal ? " reveal" : "") + (pop ? " pop" : "");
+  el.title = w.state === "bad" ? `Mistake — heard: ${w.heard}` : w.state === "skip" ? "Skipped" : "";
+}
+// Ayah-end marker turns red and shows how many mistakes that ayah has.
+function ayahBadge(g) {
+  const ay = ayahs[g]; if (!ay.endEl) return;
+  let n = 0; for (let i = ay.w0; i < ay.w1; i++) if (words[i].state === "bad" || words[i].state === "skip") n++;
+  ay.endEl.classList.toggle("err", n > 0);
+  if (n) ay.endEl.dataset.n = n; else delete ay.endEl.dataset.n;
+}
+
 function mark(i, state, heard) {
   const w = words[i], prev = w.state;
   touched.add(i);
   if (state === "ok") {
     if (!prev) stats.ok++;            // re-reciting an earlier word is never counted twice
-    w.state = "ok";
-  } else {
-    if (prev === "ok" && state === "skip") return;   // passing over words already recited correctly
-    w.state = state; stats[state]++;
-    mistakes.push({ type: state, word: w.text, key: w.key, heard: heard || "", s: w.s + 1, ayah: w.a + 1 });
-    const li = document.createElement("li");
-    const ref = `${QURAN[w.s].t} ${w.s + 1}:${w.a + 1}`;
-    li.innerHTML = state === "bad"
-      ? `${ref} — expected <span class="ar">${w.text}</span>, heard <span class="ar bad">${heard}</span>`
-      : `${ref} — skipped <span class="ar skip">${w.text}</span>`;
-    $("mistakeList").append(li);
-    if (state === "bad") { beep(); if (settings.vibrate && navigator.vibrate) navigator.vibrate(120); }
+    w.state = "ok"; decorate(w);
+    if (prev === "bad" || prev === "skip") { ayahBadge(w.g); renderMistakes(); }   // corrected on repeat
+    return;
   }
-  if (w.el) w.el.className = "w " + w.state + (w.state !== "ok" && settings.reveal ? " reveal" : "");
+  if (prev === "ok" && state === "skip") return;   // passing over words already recited correctly
+  w.state = state; w.heard = heard || ""; stats[state]++;
+  mistakes.push({ type: state, i, word: w.text, key: w.key, heard: w.heard, s: w.s + 1, ayah: w.a + 1 });
+  decorate(w, true); ayahBadge(w.g); renderMistakes();
+  if (state === "bad") { beep(); if (settings.vibrate && navigator.vibrate) navigator.vibrate(120); }
+}
+
+// Mistakes panel, grouped by ayah. Click an item to see the word on the page.
+function renderMistakes() {
+  const groups = new Map();
+  for (const m of mistakes) {
+    const k = m.s + ":" + m.ayah;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(m);
+  }
+  $("mistakeList").innerHTML = [...groups].reverse().map(([k, list]) => {
+    const [sn, an] = k.split(":");
+    return `<li class="mgroup"><div class="mhead"><b>${QURAN[sn - 1].t} ${k}</b><span class="badge">${list.length}</span></div>
+      ${list.map(m => {
+        const fixed = words[m.i].state === "ok";
+        return `<button class="mitem ${m.type}${fixed ? " fixed" : ""}" data-i="${m.i}">
+          <span class="tag">${m.type === "bad" ? "Mistake" : "Skipped"}</span>
+          <span class="ar">${m.word}</span>${m.type === "bad" ? `<span class="heard-as">heard <span class="ar">${m.heard}</span></span>` : ""}
+          ${fixed ? `<span class="fixed-tag">✓ corrected</span>` : ""}</button>`;
+      }).join("")}</li>`;
+  }).join("");
+  $("noMistakes").style.display = mistakes.length ? "none" : "block";
+  $("mistakeCount").textContent = mistakes.length ? `(${mistakes.length})` : "";
+}
+function revealWord(i) {
+  showPage(pageOfAyah[words[i].g]);
+  const el = words[i].el; if (!el) return;
+  el.scrollIntoView({ block: "center", behavior: "smooth" });
+  el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash");
 }
 
 /* ---------- Alignment of heard words against expected words ---------- */
@@ -282,7 +320,7 @@ function feed(text, flush) {
 const BROWSER_MSG = "Recitation checking does not work in this browser. Please open this page in Google Chrome (Android, Windows, Mac) or Microsoft Edge, or Safari on iPhone.";
 function fatal(t) { msg(t, true); alert(t); }
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rec = null, listening = false, committed = {}, trail = [];
+let rec = null, listening = false, committed = {}, trail = [], idleTimer = null;
 function diag(ev) {
   if (trail[trail.length - 1] === ev) return;
   trail.push(ev); if (trail.length > 8) trail.shift();
@@ -302,8 +340,16 @@ function startListening() {
       shown += " " + ws.join(" ");
       // Check words as soon as they are stable (all but the last 2 while still speaking),
       // so mistakes show up during continuous recitation, not only after a pause.
-      const done = committed[i] || 0, upto = r.isFinal ? ws.length : ws.length - 2;
+      const done = committed[i] || 0, upto = r.isFinal ? ws.length : ws.length - 1;
       if (upto > done) { feed(ws.slice(done, upto).join(" ")); committed[i] = upto; }
+      // If the last word stays the same for a moment, it is final enough: check it too.
+      if (!r.isFinal) {
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+          const d = committed[i] || 0;
+          if (listening && ws.length > d) { feed(ws.slice(d).join(" ")); committed[i] = ws.length; }
+        }, 650);
+      } else clearTimeout(idleTimer);
     }
     $("heard").textContent = shown.trim();
     diag("result");
@@ -392,6 +438,7 @@ function bind() {
   });
   $("surah").onchange = () => { fillAyahSelect(); jumpTo(+$("surah").value, 0); };
   $("fromAyah").onchange = () => jumpTo(+$("surah").value, +$("fromAyah").value);
+  $("mistakeList").onclick = e => { const b = e.target.closest(".mitem"); if (b) revealWord(+b.dataset.i); };
   $("book").onclick = e => { const i = e.target.dataset && e.target.dataset.i; if (i != null) { stopListening(); setStart(+i); } };
   $("pgNext").onclick = () => turn(1);
   $("pgPrev").onclick = () => turn(-1);
