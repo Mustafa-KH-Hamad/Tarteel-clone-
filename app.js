@@ -1,7 +1,8 @@
 "use strict";
 /* Tilawa Checker — free Quran recitation checker.
-   Flow: load Quran text -> render chosen surah as word spans -> browser speech recognition (Arabic)
-   -> each recognised word is aligned against the expected word -> mark correct / mistake / skipped. */
+   Flow: load Quran text + mushaf page layout -> build one list of every word in the Quran ->
+   render the current page spread -> browser speech recognition (Arabic) -> each recognised word
+   is aligned with the expected word -> mark correct / mistake / skipped. */
 
 const $ = id => document.getElementById(id);
 const store = {
@@ -44,84 +45,143 @@ function same(expKey, heardKey) {
 }
 
 /* ---------- Settings ---------- */
-const settings = Object.assign({ trans: false, sound: true, vibrate: true, reveal: true, font: 30, strict: 1, memo: false },
+const settings = Object.assign({ trans: false, sound: true, vibrate: true, reveal: true, font: 26, strict: 1, memo: false, theme: "" },
   store.get("settings", {}));
 function saveSettings() { store.set("settings", settings); applySettings(); }
 function applySettings() {
-  document.documentElement.style.setProperty("--qfont", settings.font + "px");
-  $("mushaf").classList.toggle("hide-trans", !settings.trans);
-  $("mushaf").classList.toggle("memo", settings.memo);
-  $("memoBtn").textContent = settings.memo ? "🙈" : "👁";
+  const root = document.documentElement;
+  root.style.setProperty("--qfont", settings.font + "px");
+  if (settings.theme) root.dataset.theme = settings.theme; else delete root.dataset.theme;
+  $("book").classList.toggle("memo", settings.memo);
+  $("memoBtn").classList.toggle("active", settings.memo);
+  $("transPanel").style.display = settings.trans ? "" : "none";
   $("optTrans").checked = settings.trans; $("optSound").checked = settings.sound;
   $("optVibrate").checked = settings.vibrate; $("optReveal").checked = settings.reveal;
-  $("optFont").value = settings.font; $("optStrict").value = settings.strict;
+  $("optFont").value = settings.font; $("optStrict").value = settings.strict; $("optTheme").value = settings.theme;
+  showTranslation();
 }
 
-/* ---------- State ---------- */
-let QURAN = null;
-let words = [];          // {text, key, ayah, el, state}
-let ptr = 0, startPtr = 0;
-let stats, mistakes, freeHeard;
+/* ---------- Quran model ---------- */
+let QURAN = null, META = null;
+const ayahs = [];        // {s, a, w0, w1}   (global ayah index)
+const words = [];        // {text, key, s, a, g, muq, first, state, el}
+let pageOfAyah = [];     // global ayah index -> page number (1..604)
 const MUQATTAAT = new Set(["الم","المص","الر","المر","كهيعص","طه","طسم","طس","يس","ص","حم","عسق","ق","ن"].map(key));
-const OPENING = new Set(["اعوذ","بالله","من","الشيطان","الرجيم","بسم","الله","الرحمن","الرحمان","الرحيم"].map(k => skel(key(k))));
+const OPENING = new Set(["اعوذ","بالله","من","الشيطان","الرجيم","بسم","الله","الرحمن","الرحمان","الرحيم","صدق","العظيم"].map(k => skel(key(k))));
 
-function resetStats() { stats = { ok: 0, bad: 0, skip: 0 }; mistakes = []; freeHeard = 0; }
-
-/* ---------- Rendering ---------- */
-function fillSurahSelect() {
-  $("surah").innerHTML = QURAN.map((s, i) =>
-    `<option value="${i}">${i + 1}. ${s.t} — ${s.n} (${s.v.length})</option>`).join("");
-}
-function fillAyahSelect() {
-  const s = QURAN[+$("surah").value];
-  $("fromAyah").innerHTML = s.v.map((_, i) => `<option value="${i}">${i + 1}</option>`).join("");
-}
-const arNum = n => n.toLocaleString("ar-EG");
-
-function renderSurah() {
-  const si = +$("surah").value, s = QURAN[si];
-  $("surahTitle").textContent = `سورة ${s.n} · ${s.t}`;
-  $("bismillah").style.display = (si === 0 || si === 8) ? "none" : "block";
-  const box = $("mushaf"); box.innerHTML = ""; words = [];
-  const frag = document.createDocumentFragment();
-  s.v.forEach(([ar, en], ai) => {
-    let last = null;
+function buildModel() {
+  QURAN.forEach((s, si) => s.v.forEach(([ar], ai) => {
+    const g = ayahs.length, w0 = words.length;
+    let last = null, n = 0;
     for (const tok of ar.split(/\s+/).filter(Boolean)) {
       const k = key(tok);
-      if (!k) {                                   // waqf sign / hizb mark: attach to previous word
-        if (last) last.el.textContent += " " + tok; else frag.append(tok + " ");
-        continue;
-      }
-      const el = document.createElement("span");
-      el.className = "w"; el.textContent = tok; el.dataset.i = words.length;
-      const w = { text: tok, key: k, ayah: ai, el, state: "" };
-      w.muq = ai === 0 && words.length < 2 && MUQATTAAT.has(k);
-      words.push(w); frag.append(el, " "); last = w;
+      if (!k) { if (last) last.text += " " + tok; continue; }   // waqf sign: attach to previous word
+      last = { text: tok, key: k, s: si, a: ai, g, state: "", el: null,
+        first: ai === 0 && n === 0, muq: ai <= 1 && n === 0 && MUQATTAAT.has(k) };
+      words.push(last); n++;
     }
-    const m = document.createElement("span"); m.className = "mark"; m.textContent = "﴿" + arNum(ai + 1) + "﴾";
-    frag.append(m, " ");
-    const t = document.createElement("span"); t.className = "trans"; t.textContent = `${ai + 1}. ${en}`;
-    frag.append(t);
-  });
-  box.append(frag);
-  setStart(words.findIndex(w => w.ayah === +$("fromAyah").value));
+    ayahs.push({ s: si, a: ai, w0, w1: words.length });
+  }));
+  const starts = META.pages;                    // 1-based global ayah number where each page starts (+ sentinel)
+  pageOfAyah = new Array(ayahs.length);
+  for (let p = 0; p < starts.length - 1; p++)
+    for (let g = starts[p] - 1; g < starts[p + 1] - 1; g++) pageOfAyah[g] = p + 1;
+}
+const ayahIndex = (s, a) => QURAN.slice(0, s).reduce((n, x) => n + x.v.length, 0) + a;
+const juzOf = g => { let j = 0; while (j + 1 < META.juz.length - 1 && META.juz[j + 1] - 1 <= g) j++; return j + 1; };
+const arNum = n => n.toLocaleString("ar-EG");
+
+/* ---------- Mushaf rendering (two-page spread on wide screens) ---------- */
+let shownPages = [], rendered = [], curEl = null;
+const isWide = () => window.innerWidth >= 900;
+const spreadFor = p => isWide() ? (p % 2 ? [p, p + 1] : [p - 1, p]).filter(x => x >= 1 && x <= 604) : [p];
+
+function renderPage(p, side) {
+  const page = document.createElement("article");
+  page.className = "page " + side;
+  const g0 = META.pages[p - 1] - 1, g1 = META.pages[p] - 1;
+  const firstSurah = QURAN[ayahs[g0].s];
+  page.innerHTML = `<div class="frame"><div class="page-head"><span>سورة ${firstSurah.n}</span><span>الجزء ${arNum(juzOf(g0))}</span></div>
+    <div class="page-body"></div><div class="page-foot"><span>${arNum(p)}</span></div></div>`;
+  const body = page.querySelector(".page-body");
+  for (let g = g0; g < g1; g++) {
+    const ay = ayahs[g];
+    if (ay.a === 0) {
+      const b = document.createElement("div"); b.className = "surah-banner"; b.textContent = "سورة " + QURAN[ay.s].n;
+      body.append(b);
+      if (ay.s !== 0 && ay.s !== 8) { const bs = document.createElement("span"); bs.className = "bismillah"; bs.textContent = "بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ ٱلرَّحِيمِ"; body.append(bs); }
+    }
+    for (let i = ay.w0; i < ay.w1; i++) {
+      const w = words[i], el = document.createElement("span");
+      el.className = "w" + (w.state ? " " + w.state : ""); el.textContent = w.text; el.dataset.i = i;
+      if (w.state && w.state !== "ok" && settings.reveal) el.classList.add("reveal");
+      w.el = el; rendered.push(i); body.append(el, " ");
+    }
+    const end = document.createElement("span"); end.className = "aya-end"; end.textContent = arNum(ay.a + 1);
+    body.append(end, " ");
+  }
+  return page;
 }
 
+function showPage(p) {
+  p = Math.min(604, Math.max(1, p));
+  const pages = spreadFor(p);
+  if (pages.join() === shownPages.join()) return;
+  rendered.forEach(i => words[i].el = null); rendered = []; curEl = null;
+  const book = $("book"); book.innerHTML = "";
+  pages.forEach((pg, k) => book.append(renderPage(pg, pages.length === 1 ? "single" : k === 0 ? "right" : "left")));
+  shownPages = pages;
+  $("pgPrev").disabled = pages[0] <= 1; $("pgNext").disabled = pages[pages.length - 1] >= 604;
+  highlightCurrent(false);
+}
+const turn = dir => showPage(dir > 0 ? shownPages[shownPages.length - 1] + 1 : shownPages[0] - 1);
+
+/* ---------- Session state ---------- */
+let ptr = 0, startPtr = 0, stats, mistakes, freeHeard = 0, pending = [], touched = new Set();
+function resetStats() { stats = { ok: 0, bad: 0, skip: 0 }; mistakes = []; freeHeard = 0; pending = []; }
+
 function setStart(i) {
-  resetStats();
-  words.forEach(w => { w.state = ""; w.el.className = "w"; });
-  ptr = startPtr = Math.max(0, i);
-  $("mistakeList").innerHTML = ""; $("heard").textContent = "…"; msg("");
+  touched.forEach(j => { words[j].state = ""; if (words[j].el) words[j].el.className = "w"; });
+  touched.clear(); resetStats();
+  ptr = startPtr = Math.max(0, Math.min(i, words.length - 1));
+  $("mistakeList").innerHTML = ""; $("heard").textContent = "";
+  store.set("last", ptr);
   paint(true);
 }
 
+function highlightCurrent(scroll) {
+  if (curEl) curEl.classList.remove("cur");
+  curEl = words[ptr] && words[ptr].el;
+  if (curEl) {
+    curEl.classList.add("cur");
+    if (scroll) {
+      const r = curEl.getBoundingClientRect();
+      if (r.top < 140 || r.bottom > innerHeight - 110) curEl.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }
+}
+
+function syncSelects() {
+  const w = words[Math.min(ptr, words.length - 1)];
+  if (+$("surah").value !== w.s) { $("surah").value = w.s; fillAyahSelect(); }
+  $("fromAyah").value = w.a;
+}
+
 function paint(scroll) {
-  words.forEach((w, i) => w.el.classList.toggle("cur", i === ptr));
+  if (words[ptr]) { showPage(pageOfAyah[words[ptr].g]); syncSelects(); }
+  highlightCurrent(scroll);
   $("sOk").textContent = stats.ok; $("sBad").textContent = stats.bad; $("sSkip").textContent = stats.skip;
   const tot = stats.ok + stats.bad + stats.skip;
   $("sPct").textContent = tot ? Math.round(100 * stats.ok / tot) + "%" : "–";
   $("noMistakes").style.display = mistakes.length ? "none" : "block";
-  if (scroll && words[ptr]) words[ptr].el.scrollIntoView({ block: "center", behavior: "smooth" });
+  showTranslation();
+}
+
+function showTranslation() {
+  if (!settings.trans || !QURAN || !words[ptr]) return;
+  const w = words[Math.min(ptr, words.length - 1)];
+  $("transRef").textContent = `· ${QURAN[w.s].t} ${w.s + 1}:${w.a + 1}`;
+  $("transText").textContent = QURAN[w.s].v[w.a][1];
 }
 function msg(t, warn) { $("msg").textContent = t; $("msg").className = "msg" + (warn ? " warn" : ""); }
 
@@ -137,59 +197,85 @@ function beep() {
     o.connect(g).connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + 0.25);
   } catch {}
 }
+
 function mark(i, state, heard) {
-  const w = words[i]; w.state = state;
-  w.el.className = "w " + state + (state !== "ok" && settings.memo && settings.reveal ? " reveal" : "");
-  if (state === "ok") { stats.ok++; return; }
-  stats[state]++;
-  const s = QURAN[+$("surah").value];
-  mistakes.push({ type: state, word: w.text, key: w.key, heard: heard || "", ayah: w.ayah + 1 });
-  const li = document.createElement("li");
-  li.innerHTML = state === "bad"
-    ? `Ayah ${w.ayah + 1}: expected <span class="ar">${w.text}</span> — heard <span class="ar bad">${heard}</span>`
-    : `Ayah ${w.ayah + 1}: skipped <span class="ar skip">${w.text}</span>`;
-  $("mistakeList").append(li);
-  if (state === "bad") { beep(); if (settings.vibrate && navigator.vibrate) navigator.vibrate(120); }
+  const w = words[i], prev = w.state;
+  touched.add(i);
+  if (state === "ok") {
+    if (!prev) stats.ok++;            // re-reciting an earlier word is never counted twice
+    w.state = "ok";
+  } else {
+    if (prev === "ok" && state === "skip") return;   // passing over words already recited correctly
+    w.state = state; stats[state]++;
+    mistakes.push({ type: state, word: w.text, key: w.key, heard: heard || "", s: w.s + 1, ayah: w.a + 1 });
+    const li = document.createElement("li");
+    const ref = `${QURAN[w.s].t} ${w.s + 1}:${w.a + 1}`;
+    li.innerHTML = state === "bad"
+      ? `${ref} — expected <span class="ar">${w.text}</span>, heard <span class="ar bad">${heard}</span>`
+      : `${ref} — skipped <span class="ar skip">${w.text}</span>`;
+    $("mistakeList").append(li);
+    if (state === "bad") { beep(); if (settings.vibrate && navigator.vibrate) navigator.vibrate(120); }
+  }
+  if (w.el) w.el.className = "w " + w.state + (w.state !== "ok" && settings.reveal ? " reveal" : "");
 }
 
 /* ---------- Alignment of heard words against expected words ---------- */
-function feed(text) {
-  const heard = text.split(/\s+/).map(t => ({ raw: t, k: key(t) })).filter(h => h.k);
+function backMatch(hk, nextK) {
+  // Reciter went back to an earlier place: find the nearest earlier spot where this word
+  // (and, if available, the next word too) matches.
+  for (let j = ptr - 1; j >= Math.max(0, ptr - 800); j--)
+    if (same(words[j].key, hk) && (!nextK || (words[j + 1] && same(words[j + 1].key, nextK)))) return j;
+  return -1;
+}
+
+function feed(text, flush) {
+  const heard = pending.concat(text.split(/\s+/).map(t => ({ raw: t, k: key(t) })).filter(h => h.k));
+  pending = [];
   for (let h = 0; h < heard.length; h++) {
     if (ptr >= words.length) break;
     const hk = heard[h].k, nextK = heard[h + 1] && heard[h + 1].k;
     const exp = words[ptr];
 
-    // 0. disconnected letters (الم، يس…) are read as letter names ("alif lam mim"): accept them freely
-    //    and move on as soon as the next real word is heard.
+    // A. isti'adha / basmala / "sadaq Allah" at the start or between surahs — ignore
+    const atStart = (ptr === startPtr && stats.ok === 0) || exp.first;
+    if (atStart && OPENING.has(skel(hk)) && !same(exp.key, hk)) continue;
+    // B. disconnected letters (الم، يس…) are read as letter names: accept them freely
     if (exp.muq) {
+      if (exp.key === hk) { mark(ptr++, "ok"); freeHeard = 0; continue; }
       if (words[ptr + 1] && same(words[ptr + 1].key, hk)) { mark(ptr++, "ok"); mark(ptr++, "ok"); freeHeard = 0; continue; }
-      if (OPENING.has(skel(hk))) continue;
       if (++freeHeard > 8) { mark(ptr++, "ok"); freeHeard = 0; }
       continue;
     }
-    // 1. direct match
-    if (same(exp.key, hk)) { mark(ptr++, "ok"); freeHeard = 0; continue; }
-    // 2. engine split one Quran word into two (يا ايها -> يٰٓأيها)
+    // C. direct match
+    if (same(exp.key, hk)) { mark(ptr++, "ok"); continue; }
+    // D. engine split one Quran word into two (يا ايها -> يٰٓأيها)
     if (nextK && same(exp.key, hk + nextK)) { mark(ptr++, "ok"); h++; continue; }
-    // 3. engine merged two Quran words into one
+    // E. engine merged two Quran words into one
     if (words[ptr + 1] && same(exp.key + words[ptr + 1].key, hk)) { mark(ptr++, "ok"); mark(ptr++, "ok"); continue; }
-    // 4. isti'adha / basmala before starting
-    if (ptr === startPtr && stats.ok === 0 && OPENING.has(skel(hk))) continue;
-    // 5. reciter repeated a previous word — not a mistake
-    if ((ptr > startPtr && same(words[ptr - 1].key, hk)) || (ptr > startPtr + 1 && same(words[ptr - 2].key, hk))) continue;
-    // 6. skipped words: heard word matches one of the next few expected words
-    let jump = -1;
-    for (let k = 1; k <= 4 && ptr + k < words.length; k++) if (same(words[ptr + k].key, hk)) { jump = k; break; }
-    if (jump > 0) {
-      for (let k = 0; k < jump; k++) mark(ptr++, "skip");
-      mark(ptr++, "ok"); continue;
+    // F. repeated the previous word or two — not a mistake
+    if ((ptr > 0 && same(words[ptr - 1].key, hk)) || (ptr > 1 && same(words[ptr - 2].key, hk))) continue;
+
+    // G. skipped ahead a few words
+    let fwd = -1;
+    for (let k = 1; k <= 4 && ptr + k < words.length; k++) if (same(words[ptr + k].key, hk)) { fwd = k; break; }
+    const fwdConfirmed = fwd > 0 && (!nextK || (words[ptr + fwd + 1] && same(words[ptr + fwd + 1].key, nextK)));
+    if (fwdConfirmed) { for (let k = 0; k < fwd; k++) mark(ptr++, "skip"); mark(ptr++, "ok"); continue; }
+
+    // H. went back to re-recite earlier ayat — move there, no mistake
+    if (!nextK && !flush && backMatch(hk, null) >= 0) { pending = heard.slice(h); break; }  // wait for next word to confirm
+    const back = nextK ? backMatch(hk, nextK) : -1;
+    if (back >= 0) {
+      ptr = back; mark(ptr++, "ok"); mark(ptr++, "ok"); h++;
+      msg("↩ Going back — repeating is fine.");
+      continue;
     }
-    // 7. wrong word
+    if (fwd > 0) { for (let k = 0; k < fwd; k++) mark(ptr++, "skip"); mark(ptr++, "ok"); continue; }
+
+    // I. wrong word
     mark(ptr++, "bad", heard[h].raw);
   }
   paint(true);
-  if (ptr >= words.length) { msg("✅ You reached the end of the surah."); stopListening(true); }
+  if (ptr >= words.length) { msg("✅ You completed the Quran. ما شاء الله"); stopListening(true); }
 }
 
 /* ---------- Speech recognition ---------- */
@@ -219,46 +305,47 @@ function startListening() {
       const done = committed[i] || 0, upto = r.isFinal ? ws.length : ws.length - 2;
       if (upto > done) { feed(ws.slice(done, upto).join(" ")); committed[i] = upto; }
     }
-    $("heard").textContent = shown.trim() || "…";
+    $("heard").textContent = shown.trim();
     diag("result");
   };
   rec.onerror = e => {
     diag("error:" + e.error);
-    if (e.error === "not-allowed" || e.error === "service-not-allowed") { msg("Microphone permission was denied. Allow the microphone for this site and try again.", true); stopListening(); }
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") { stopListening(); fatal("Microphone permission was denied. Allow the microphone for this site and try again."); }
     else if (e.error === "network") { stopListening(); fatal("Speech recognition failed (network error). This happens in browsers such as Brave, Opera or Firefox that block Google's speech service, or when you are offline.\n\n" + BROWSER_MSG); }
     else if (e.error === "audio-capture") { stopListening(); fatal("No microphone was found. Check that a microphone is connected and not used by another app."); }
   };
   rec.onstart = () => diag("start");
-  rec.onsoundstart = () => diag("sound");
-  rec.onaudiostart = () => diag("mic-on") || msg("🎤 Microphone is on — start reciting.");
-  rec.onspeechstart = () => diag("speech") || msg("👂 Hearing you…");
-  rec.onend = () => { diag("end"); if (listening) { committed = {}; try { rec.start(); } catch (err) { diag("restart-failed"); } } };
+  rec.onaudiostart = () => { diag("mic-on"); msg("🎤 Listening — start reciting."); };
+  rec.onspeechstart = () => { diag("speech"); msg("👂 Hearing you…"); };
+  rec.onend = () => { diag("end"); if (listening) { committed = {}; try { rec.start(); } catch { diag("restart-failed"); } } };
   trail = []; diag("starting");
   try { rec.start(); } catch (err) { diag("start-failed:" + err.message); }
   listening = true;
-  $("micBtn").textContent = "⏹ Stop"; $("micBtn").classList.add("on");
-  msg("Listening… start reciting.");
+  $("micLabel").textContent = "Stop"; $("micBtn").classList.add("on"); $("dot").classList.add("on");
+  msg("Starting microphone…");
 }
 
 function stopListening(finished) {
   const was = listening;
   listening = false;
   if (rec) { try { rec.stop(); } catch {} }
-  $("micBtn").textContent = "🎙 Start"; $("micBtn").classList.remove("on");
+  if (pending.length) feed("", true);
+  $("micLabel").textContent = "Start"; $("micBtn").classList.remove("on"); $("dot").classList.remove("on");
+  if (was) msg("Stopped. Press the microphone to continue.");
   if (was && stats.ok + stats.bad + stats.skip > 0) saveSession(finished);
 }
 
 /* ---------- History ---------- */
 function saveSession(finished) {
-  const si = +$("surah").value, s = QURAN[si];
-  const fromA = words[startPtr].ayah + 1, toA = words[Math.max(startPtr, ptr - 1)].ayah + 1;
-  const sess = { date: Date.now(), surah: si + 1, name: s.t, from: fromA, to: toA, ...stats, mistakes };
+  const a = words[startPtr], b = words[Math.max(startPtr, Math.min(ptr, words.length) - 1)];
+  const ref = w => `${QURAN[w.s].t} ${w.s + 1}:${w.a + 1}`;
+  const sess = { date: Date.now(), from: ref(a), to: ref(b), surah: a.s + 1, name: QURAN[a.s].t, ...stats, mistakes };
   const hist = store.get("history", []); hist.unshift(sess); store.set("history", hist.slice(0, 300));
   const tot = stats.ok + stats.bad + stats.skip;
   $("summaryBody").innerHTML = `
-    <p><b>${s.t}</b>, ayah ${fromA}–${toA}${finished ? " (complete)" : ""}</p>
-    <div class="stats"><div><b>${stats.ok}</b><span>Correct</span></div><div class="bad"><b>${stats.bad}</b><span>Mistakes</span></div>
-    <div class="skip"><b>${stats.skip}</b><span>Skipped</span></div><div><b>${Math.round(100 * stats.ok / tot)}%</b><span>Accuracy</span></div></div>
+    <p><b>${sess.from}</b> → <b>${sess.to}</b>${finished ? " (complete)" : ""}</p>
+    <div class="stats"><div class="stat"><b>${stats.ok}</b><span>Correct</span></div><div class="stat bad"><b>${stats.bad}</b><span>Mistakes</span></div>
+    <div class="stat skip"><b>${stats.skip}</b><span>Skipped</span></div><div class="stat"><b>${Math.round(100 * stats.ok / tot)}%</b><span>Accuracy</span></div></div>
     <p class="muted">${stats.bad + stats.skip === 0 ? "ما شاء الله — no mistakes!" : "Review the highlighted words, then try again."}</p>`;
   $("summary").classList.remove("hidden");
   renderHistory();
@@ -268,34 +355,58 @@ function renderHistory() {
   const hist = store.get("history", []);
   const t = hist.reduce((a, s) => (a.ok += s.ok, a.bad += s.bad, a.skip += s.skip, a), { ok: 0, bad: 0, skip: 0 });
   const tot = t.ok + t.bad + t.skip;
-  $("totals").innerHTML = `<div><b>${hist.length}</b><span>Sessions</span></div><div><b>${t.ok}</b><span>Correct words</span></div>
-    <div class="bad"><b>${t.bad + t.skip}</b><span>Mistakes</span></div><div><b>${tot ? Math.round(100 * t.ok / tot) + "%" : "–"}</b><span>Accuracy</span></div>`;
+  $("totals").innerHTML = `<div class="stat"><b>${hist.length}</b><span>Sessions</span></div><div class="stat"><b>${t.ok}</b><span>Correct words</span></div>
+    <div class="stat bad"><b>${t.bad + t.skip}</b><span>Mistakes</span></div><div class="stat"><b>${tot ? Math.round(100 * t.ok / tot) + "%" : "–"}</b><span>Accuracy</span></div>`;
   const freq = {};
-  hist.forEach(s => s.mistakes.forEach(m => {
-    const id = s.surah + ":" + m.ayah + ":" + m.key;
-    (freq[id] = freq[id] || { n: 0, word: m.word, surah: s.name, sn: s.surah, ayah: m.ayah }).n++;
+  hist.forEach(s => (s.mistakes || []).forEach(m => {
+    const sn = m.s || s.surah, id = sn + ":" + m.ayah + ":" + m.key;
+    (freq[id] = freq[id] || { n: 0, word: m.word, ref: `${QURAN[sn - 1].t} ${sn}:${m.ayah}` }).n++;
   }));
   const weak = Object.values(freq).sort((a, b) => b.n - a.n).slice(0, 15);
   $("weakList").innerHTML = weak.length ? weak.map(w =>
-    `<li><span class="ar">${w.word}</span> — ${w.surah} ${w.sn}:${w.ayah} <span class="muted">(${w.n}×)</span></li>`).join("")
+    `<li><span class="ar">${w.word}</span> — ${w.ref} <span class="muted">(${w.n}×)</span></li>`).join("")
     : `<p class="muted">Nothing yet — recite a few times to see your weak spots.</p>`;
   $("sessions").innerHTML = hist.length ? hist.slice(0, 50).map(s => {
     const n = s.ok + s.bad + s.skip;
-    return `<div class="sess"><b>${s.surah}. ${s.name}</b> ayah ${s.from}–${s.to} · ${new Date(s.date).toLocaleString()}<br>
-      <span class="ok">${s.ok} correct</span> · <span class="bad">${s.bad} mistakes</span> · <span class="skip">${s.skip} skipped</span> · ${Math.round(100 * s.ok / n)}%</div>`;
+    const range = s.from && isNaN(s.from) ? `${s.from} → ${s.to}` : `${s.surah}. ${s.name} ${s.from}–${s.to}`;
+    return `<div class="sess"><b>${range}</b> · <span class="muted">${new Date(s.date).toLocaleString()}</span><br>
+      <span class="ok">${s.ok} correct</span> · <span class="bad">${s.bad} mistakes</span> · <span class="skip">${s.skip} skipped</span> · ${n ? Math.round(100 * s.ok / n) : 0}%</div>`;
   }).join("") : `<p class="muted">No sessions yet.</p>`;
 }
 
 /* ---------- Wiring ---------- */
+function fillSurahSelect() {
+  $("surah").innerHTML = QURAN.map((s, i) => `<option value="${i}">${i + 1}. ${s.t} — ${s.n}</option>`).join("");
+}
+function fillAyahSelect() {
+  const s = QURAN[+$("surah").value];
+  $("fromAyah").innerHTML = s.v.map((_, i) => `<option value="${i}">${i + 1}</option>`).join("");
+}
+function jumpTo(s, a) { stopListening(); setStart(ayahs[ayahIndex(s, a)].w0); }
+
 function bind() {
   document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
     document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("active", x === b));
     document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + b.dataset.view));
     if (b.dataset.view === "history") renderHistory();
   });
-  $("surah").onchange = () => { stopListening(); fillAyahSelect(); renderSurah(); store.set("last", { s: +$("surah").value, a: 0 }); };
-  $("fromAyah").onchange = () => { stopListening(); setStart(words.findIndex(w => w.ayah === +$("fromAyah").value)); store.set("last", { s: +$("surah").value, a: +$("fromAyah").value }); };
-  $("mushaf").onclick = e => { const i = e.target.dataset && e.target.dataset.i; if (i != null && !listening) { setStart(+i); $("fromAyah").value = words[+i].ayah; } };
+  $("surah").onchange = () => { fillAyahSelect(); jumpTo(+$("surah").value, 0); };
+  $("fromAyah").onchange = () => jumpTo(+$("surah").value, +$("fromAyah").value);
+  $("book").onclick = e => { const i = e.target.dataset && e.target.dataset.i; if (i != null) { stopListening(); setStart(+i); } };
+  $("pgNext").onclick = () => turn(1);
+  $("pgPrev").onclick = () => turn(-1);
+  document.addEventListener("keydown", e => {
+    if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
+    if (e.key === "ArrowLeft") turn(1); else if (e.key === "ArrowRight") turn(-1);
+  });
+  let tx = null;
+  $("book").addEventListener("touchstart", e => tx = e.touches[0].clientX, { passive: true });
+  $("book").addEventListener("touchend", e => {
+    if (tx == null) return; const dx = e.changedTouches[0].clientX - tx; tx = null;
+    if (Math.abs(dx) > 70) turn(dx > 0 ? 1 : -1);     // swipe right = next page (Arabic page order)
+  });
+  let wide = isWide();
+  window.addEventListener("resize", () => { if (isWide() !== wide) { wide = isWide(); const p = shownPages[0]; shownPages = []; showPage(p); } });
   $("micBtn").onclick = () => listening ? stopListening() : startListening();
   $("resetBtn").onclick = () => { stopListening(); setStart(startPtr); };
   $("memoBtn").onclick = () => { settings.memo = !settings.memo; saveSettings(); };
@@ -307,19 +418,22 @@ function bind() {
   $("optReveal").onchange = e => { settings.reveal = e.target.checked; saveSettings(); };
   $("optFont").oninput = e => { settings.font = +e.target.value; saveSettings(); };
   $("optStrict").onchange = e => { settings.strict = +e.target.value; saveSettings(); };
+  $("optTheme").onchange = e => { settings.theme = e.target.value; saveSettings(); };
 }
 
 async function init() {
-  bind(); applySettings();
-  msg("Loading Quran text…");
+  bind(); applySettings(); resetStats();
+  msg("Loading the Quran…");
   try {
-    QURAN = await (await fetch("data/quran.json")).json();
+    [QURAN, META] = await Promise.all([fetch("data/quran.json").then(r => r.json()), fetch("data/meta.json").then(r => r.json())]);
   } catch { msg("Could not load the Quran text. Check your connection and reload.", true); return; }
-  fillSurahSelect();
-  const last = store.get("last", { s: 0, a: 0 });
-  $("surah").value = last.s; fillAyahSelect(); $("fromAyah").value = last.a;
-  renderSurah(); renderHistory(); msg("");
+  buildModel(); fillSurahSelect();
+  const last = store.get("last", 0);
+  $("surah").value = words[typeof last === "number" ? last : 0].s; fillAyahSelect();
+  setStart(typeof last === "number" ? last : 0);
+  renderHistory();
   if (!SR || navigator.brave) msg("⚠️ " + BROWSER_MSG, true);
+  else msg("Choose a surah and press the microphone to begin.");
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
 }
 init();
