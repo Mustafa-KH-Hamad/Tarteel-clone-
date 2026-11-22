@@ -193,11 +193,13 @@ function feed(text) {
 }
 
 /* ---------- Speech recognition ---------- */
+const BROWSER_MSG = "Recitation checking does not work in this browser. Please open this page in Google Chrome (Android, Windows, Mac) or Microsoft Edge, or Safari on iPhone.";
+function fatal(t) { msg(t, true); alert(t); }
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, listening = false, prevFinal = "";
 
 function startListening() {
-  if (!SR) { msg("Speech recognition isn't available in this browser. Please open this page in Google Chrome (Android, Windows, Mac) or Safari (iPhone).", true); return; }
+  if (!SR || navigator.brave) { fatal(BROWSER_MSG); return; }
   if (ptr >= words.length) setStart(startPtr);
   rec = new SR();
   rec.lang = "ar-SA"; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
@@ -218,8 +220,11 @@ function startListening() {
   };
   rec.onerror = e => {
     if (e.error === "not-allowed" || e.error === "service-not-allowed") { msg("Microphone permission was denied. Allow the microphone for this site and try again.", true); stopListening(); }
-    else if (e.error === "network") msg("Speech recognition needs an internet connection.", true);
+    else if (e.error === "network") { stopListening(); fatal("Speech recognition failed (network error). This happens in browsers such as Brave, Opera or Firefox that block Google's speech service, or when you are offline.\n\n" + BROWSER_MSG); }
+    else if (e.error === "audio-capture") { stopListening(); fatal("No microphone was found. Check that a microphone is connected and not used by another app."); }
   };
+  rec.onaudiostart = () => msg("🎤 Microphone is on — start reciting.");
+  rec.onspeechstart = () => msg("👂 Hearing you…");
   rec.onend = () => { if (listening) { prevFinal = ""; try { rec.start(); } catch {} } };
   try { rec.start(); } catch {}
   listening = true;
@@ -306,7 +311,7 @@ async function init() {
   const last = store.get("last", { s: 0, a: 0 });
   $("surah").value = last.s; fillAyahSelect(); $("fromAyah").value = last.a;
   renderSurah(); renderHistory(); msg("");
-  if (!SR) msg("Note: this browser has no speech recognition. Use Google Chrome for best results.", true);
+  if (!SR || navigator.brave) msg("⚠️ " + BROWSER_MSG, true);
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
 }
 init();
