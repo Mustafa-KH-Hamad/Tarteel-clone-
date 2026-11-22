@@ -206,3 +206,7 @@ select{font:inherit;font-size:.95rem;padding:8px 10px;border-radius:10px;border:
   .raya{font-size:1.3rem}
 }
 .w.unsure{text-decoration:underline dotted var(--muted) 2px;text-underline-offset:8px}
+.w.hk{text-decoration:underline wavy #8e44ad 2px;text-underline-offset:8px}
+.mitem.harakat .tag,.ritem.harakat .tag{background:#8e44ad}
+.mitem.harakat>.ar{color:#8e44ad}
+.rw.harakat{color:#8e44ad;text-decoration:underline wavy #8e44ad 1px;text-underline-offset:8px}

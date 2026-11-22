@@ -25,9 +25,12 @@ are counted through the session and saved to your history.
   [Transformers.js](https://github.com/huggingface/transformers.js). Downloads about 105 MB once, then is cached; audio never leaves
   the device. It checks each phrase after you pause, so it is slower than the browser engine.
 - Switch in Settings → Speech engine.
+- **Harakat check (beta)** (Settings): while Google checks the words, the on-device Quran model also listens and writes what it
+  hears with harakat; words whose fatha/damma/kasra/tanween differ are flagged in purple as *possible* harakat mistakes
+  (not counted in the score, because the model can mishear). The last word before a pause is excused (waqf).
 
 ## Limits
-- It checks **words**, not tajweed or small vowel (haraka) mistakes, and can sometimes mishear a word.
+- Word checking is reliable; the harakat check is a beta. Tajweed rules (madd, ghunnah, makharij) are not checked, and can sometimes mishear a word.
   If you get false alarms, set *Strictness* to *Lenient* in Settings.
 
 ## Run it

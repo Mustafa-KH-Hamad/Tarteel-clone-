@@ -46,7 +46,7 @@ function same(expKey, heardKey) {
 }
 
 /* ---------- Settings ---------- */
-const settings = Object.assign({ trans: false, sound: true, vibrate: true, reveal: true, font: 26, strict: 1, memo: false, theme: "", engine: "auto" },
+const settings = Object.assign({ trans: false, sound: true, vibrate: true, reveal: true, font: 26, strict: 1, memo: false, theme: "", engine: "auto", harakat: false },
   store.get("settings", {}));
 function saveSettings() { store.set("settings", settings); applySettings(); }
 function applySettings() {
@@ -58,7 +58,7 @@ function applySettings() {
   $("transPanel").style.display = settings.trans ? "" : "none";
   $("optTrans").checked = settings.trans; $("optSound").checked = settings.sound;
   $("optVibrate").checked = settings.vibrate; $("optReveal").checked = settings.reveal;
-  $("optFont").value = settings.font; $("optStrict").value = settings.strict; $("optTheme").value = settings.theme; $("optEngine").value = settings.engine;
+  $("optFont").value = settings.font; $("optStrict").value = settings.strict; $("optTheme").value = settings.theme; $("optEngine").value = settings.engine; $("optHarakat").checked = settings.harakat;
   showTranslation();
 }
 
@@ -142,9 +142,9 @@ function resetStats() { stats = { ok: 0, bad: 0, skip: 0 }; mistakes = []; freeH
 
 function setStart(i) {
   const gs = new Set();
-  touched.forEach(j => { const w = words[j]; w.state = ""; w.heard = ""; decorate(w); gs.add(w.g); });
+  touched.forEach(j => { const w = words[j]; w.state = ""; w.heard = ""; w.hk = ""; decorate(w); gs.add(w.g); });
   touched.clear(); resetStats(); gs.forEach(ayahBadge); renderMistakes();
-  ptr = startPtr = Math.max(0, Math.min(i, words.length - 1));
+  ptr = startPtr = Math.max(0, Math.min(i, words.length - 1)); harakatPtr = ptr;
   $("heard").textContent = "";
   store.set("last", ptr);
   paint(true);
@@ -203,7 +203,8 @@ function beep() {
 function decorate(w, pop) {
   const el = w.el; if (!el) return;
   el.className = "w" + (w.state ? " " + w.state : "") + (w.state && w.state !== "ok" && settings.reveal ? " reveal" : "") + (pop ? " pop" : "");
-  el.title = w.state === "unsure" ? "Not heard clearly — not counted as a mistake" : w.state === "bad" ? `Mistake — heard: ${w.heard}` : w.state === "skip" ? "Skipped" : "";
+  if (w.hk && w.state === "ok") el.classList.add("hk");
+  el.title = w.hk && w.state === "ok" ? `Possible harakat mistake — heard: ${w.hk}` : w.state === "unsure" ? "Not heard clearly — not counted as a mistake" : w.state === "bad" ? `Mistake — heard: ${w.heard}` : w.state === "skip" ? "Skipped" : "";
 }
 // Ayah-end marker turns red and shows how many mistakes that ayah has.
 function ayahBadge(g) {
@@ -244,8 +245,8 @@ function renderMistakes() {
       ${list.map(m => {
         const fixed = words[m.i].state === "ok";
         return `<button class="mitem ${m.type}${fixed ? " fixed" : ""}" data-i="${m.i}">
-          <span class="tag">${m.type === "bad" ? "Mistake" : "Skipped"}</span>
-          <span class="ar">${m.word}</span>${m.type === "bad" ? `<span class="heard-as">heard <span class="ar">${m.heard}</span></span>` : ""}
+          <span class="tag">${m.type === "bad" ? "Mistake" : m.type === "harakat" ? "Harakat?" : "Skipped"}</span>
+          <span class="ar">${m.word}</span>${m.type !== "skip" ? `<span class="heard-as">heard <span class="ar">${m.heard}</span></span>` : ""}
           ${fixed ? `<span class="fixed-tag">✓ corrected</span>` : ""}</button>`;
       }).join("")}</li>`;
   }).join("");
@@ -426,6 +427,7 @@ function startListening() {
   listening = true;
   setMicUI(true);
   msg("Starting microphone…");
+  if (settings.harakat) { harakatPtr = Math.max(startPtr, ptr - 5); startLocal("harakat"); }
 }
 
 function stopListening(finished) {
@@ -457,10 +459,10 @@ function getWorker() {
     if (m.type === "progress") {
       files[m.file] = m; let a = 0, t = 0;
       for (const f of Object.values(files)) { a += f.loaded; t += f.total; }
-      msg(`⬇️ Downloading the Quran speech model (only the first time): ${Math.round(a / 1e6)} / ${Math.round(t / 1e6)} MB`);
+      msg(`⬇️ Downloading the Quran speech model${localMode === "harakat" ? " for the harakat check" : ""} (only the first time): ${Math.round(a / 1e6)} / ${Math.round(t / 1e6)} MB`);
     } else if (m.type === "ready") {
       workerReady = true; diag("model-ready" + (m.device ? ":" + m.device : ""));
-      if (listening) msg("🎤 Listening (on-device) — recite, and pause briefly between phrases.");
+      if (listening && localMode === "words") msg("🎤 Listening (on-device) — recite, and pause briefly between phrases.");
       if (pendingStart) { pendingStart = false; openMic(); }
     } else if (m.type === "error") {
       diag("model-error"); listening = false; setMicUI(false);
@@ -469,7 +471,10 @@ function getWorker() {
       busy = false; diag(`heard(${m.ms || "?"}ms)`);
       if (m.error) diag("model-failed");
       const text = cleanModelText(m.text);
-      if (text && listening) { $("heard").textContent = text; feed(text); }
+      if (text && listening) {
+        if (localMode === "harakat") checkHarakat(text);
+        else { $("heard").textContent = text; feed(text); }
+      }
       if (queued) { const q = queued; queued = null; sendChunk(q); }
     }
   };
@@ -482,12 +487,15 @@ function setMicUI(on) {
   $("micBtn").classList.toggle("on", on); $("dot").classList.toggle("on", on);
 }
 
-function startLocal() {
-  listening = true; setMicUI(true); trail = []; diag("on-device");
+let localMode = "words";
+function startLocal(mode) {
+  localMode = mode || "words";
+  listening = true; setMicUI(true);
+  if (localMode === "words") { trail = []; diag("on-device"); }
   getWorker();
   if (workerReady) { openMic(); return; }
   pendingStart = true;
-  msg("Preparing the on-device Quran speech model…");
+  if (localMode === "words") msg("Preparing the on-device Quran speech model…");
   worker.postMessage({ type: "load" });
 }
 
@@ -512,8 +520,8 @@ async function openMic() {
   };
   src.connect(proc); proc.connect(audioCtx2.destination);
   buf = []; bufLen = 0; preroll = []; inSpeech = false; silenceMs = 0;
-  diag("mic-on");
-  msg("🎤 Listening (on-device) — recite, and pause briefly between phrases.");
+  diag(localMode === "harakat" ? "harakat-on" : "mic-on");
+  if (localMode === "words") msg("🎤 Listening (on-device) — recite, and pause briefly between phrases.");
 }
 
 function onFrame(f) {
@@ -563,6 +571,64 @@ function stopLocal() {
   if (proc) { flushChunk(); proc.disconnect(); proc.onaudioprocess = null; proc = null; }
   if (audioCtx2) { audioCtx2.close().catch(() => {}); audioCtx2 = null; }
   if (mic) { mic.getTracks().forEach(t => t.stop()); mic = null; }
+}
+
+/* ---------- Harakat check (beta) ---------- */
+// Google's engine returns words without harakat. When the harakat check is on, the Quran-trained model
+// also listens and writes what it hears WITH harakat. For words already confirmed correct, we compare
+// the short vowels (fatha/damma/kasra, tanween, shadda) letter by letter. Because the model can mishear,
+// these are shown as "possible" harakat mistakes and are not counted in the score.
+let harakatPtr = 0;
+const VOWEL = { "\u064E": "a", "\u064F": "u", "\u0650": "i", "\u064B": "an", "\u064C": "un", "\u064D": "in" };
+const LETTER = /[\u0621-\u063A\u0641-\u064A\u0671]/;
+function vowelTokens(word) {
+  const out = []; let last = null;
+  for (const c of word) {
+    if (LETTER.test(c)) { last = { l: c.replace(/[أإآٱ]/, "ا").replace("ؤ", "و").replace("ئ", "ي").replace("ى", "ي").replace("ة", "ه"), v: "", sh: false }; out.push(last); }
+    else if (last && VOWEL[c]) last.v = VOWEL[c];
+    else if (last && c === "\u0651") last.sh = true;
+  }
+  return out.filter(t => t.v);
+}
+// Returns a list of letters whose vowel differs, or null if the model's word has too few harakat to judge.
+function harakatDiff(expected, heard, ignoreLast) {
+  const a = vowelTokens(expected), b = vowelTokens(heard);
+  if (b.length < Math.max(1, a.length * 0.6)) return null;
+  const n = a.length, m = b.length, dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = 1; i <= n; i++) for (let j = 1; j <= m; j++)
+    dp[i][j] = a[i - 1].l === b[j - 1].l ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
+  const diffs = [];
+  for (let i = n, j = m; i > 0 && j > 0;) {
+    if (a[i - 1].l === b[j - 1].l) {
+      const lastLetter = i === n;
+      const va = a[i - 1].v.replace("n", ""), vb = b[j - 1].v.replace("n", "");
+      if (va !== vb && !(lastLetter && ignoreLast)) diffs.push(a[i - 1].l);
+      i--; j--;
+    } else if (dp[i - 1][j] >= dp[i][j - 1]) i--; else j--;
+  }
+  return diffs;
+}
+function checkHarakat(text) {
+  const hw = text.split(/\s+/).filter(Boolean);
+  let j = Math.max(harakatPtr, startPtr), found = 0;
+  hw.forEach((h, n) => {
+    const k = key(h);
+    for (let idx = j; idx < Math.min(words.length, j + 8); idx++) {
+      if (!same(words[idx].key, k)) continue;
+      j = idx + 1; found++;
+      const w = words[idx];
+      if (w.state !== "ok" || w.hk) return;
+      const diffs = harakatDiff(w.text, h, n === hw.length - 1);   // last word before a pause may be read with sukun (waqf)
+      if (diffs && diffs.length) {
+        w.hk = h;
+        mistakes.push({ type: "harakat", i: idx, word: w.text, key: w.key, heard: h, s: w.s + 1, ayah: w.a + 1 });
+        decorate(w); renderMistakes();
+      }
+      return;
+    }
+  });
+  if (found) harakatPtr = j;
+  diag("harakat-checked");
 }
 
 /* ---------- History ---------- */
@@ -633,10 +699,10 @@ function buildReport(list) {
     const items = ms.map(m => {
       const pos = m.i != null ? m.i - ay.w0 + 1 : null;
       const where = pos ? `Word ${pos}` : "";
-      const what = m.type === "bad"
+      const what = m.type !== "skip"
         ? `<span class="said">You said <span class="ar bad">${esc(m.heard) || "—"}</span></span> <span class="arrow">→</span> <span class="said">Correct: <span class="ar ok">${m.word}</span></span>`
         : `<span class="said">You skipped</span> <span class="arrow">→</span> <span class="said">Correct: <span class="ar ok">${m.word}</span></span>`;
-      return `<li class="ritem ${m.type}"><span class="tag">${m.type === "bad" ? "Mistake" : "Skipped"}</span>
+      return `<li class="ritem ${m.type}"><span class="tag">${m.type === "bad" ? "Mistake" : m.type === "harakat" ? "Harakat?" : "Skipped"}</span>
         <span class="where">${where}</span>${what}${m.fixed ? ` <span class="fixed-tag">✓ corrected later</span>` : ""}</li>`;
     }).join("");
     return `<section class="rsec"><div class="rhead"><b>${QURAN[sn - 1].t} — ayah ${an}</b> <span class="muted">(${sn}:${an})</span>
@@ -706,6 +772,7 @@ function bind() {
   $("optFont").oninput = e => { settings.font = +e.target.value; saveSettings(); };
   $("optStrict").onchange = e => { settings.strict = +e.target.value; saveSettings(); };
   $("optTheme").onchange = e => { settings.theme = e.target.value; saveSettings(); };
+  $("optHarakat").onchange = e => { stopListening(); settings.harakat = e.target.checked; saveSettings(); };
   $("optEngine").onchange = e => { stopListening(); settings.engine = e.target.value; saveSettings(); };
 }
 
