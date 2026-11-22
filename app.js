@@ -385,6 +385,7 @@ function stopListening(finished) {
   setMicUI(false);
   if (was) msg("Stopped. Press the microphone to continue.");
   if (was && stats.ok + stats.bad + stats.skip > 0) saveSession(finished);
+  else if (was) msg("No words were recognised in this session. Speak a little louder or closer to the microphone.", true);
 }
 
 /* ---------- On-device speech engine (Brave, Firefox, offline) ---------- */
@@ -513,11 +514,14 @@ function stopLocal() {
 }
 
 /* ---------- History ---------- */
-function saveSession(finished) {
+function currentSession() {
   const a = words[startPtr], b = words[Math.max(startPtr, Math.min(ptr, words.length) - 1)];
   const ref = w => `${QURAN[w.s].t} ${w.s + 1}:${w.a + 1}`;
   const ms = mistakes.map(m => ({ ...m, fixed: words[m.i].state === "ok" }));
-  const sess = { date: Date.now(), from: ref(a), to: ref(b), surah: a.s + 1, name: QURAN[a.s].t, ...stats, mistakes: ms };
+  return { date: Date.now(), from: ref(a), to: ref(b), surah: a.s + 1, name: QURAN[a.s].t, ...stats, mistakes: ms };
+}
+function saveSession(finished) {
+  const sess = currentSession(), ms = sess.mistakes;
   const hist = store.get("history", []); hist.unshift(sess); store.set("history", hist.slice(0, 300));
   const tot = stats.ok + stats.bad + stats.skip;
   $("summaryBody").innerHTML = `
@@ -639,6 +643,8 @@ function bind() {
   $("memoBtn").onclick = () => { settings.memo = !settings.memo; saveSettings(); };
   $("sessions").onclick = e => { const b = e.target.closest("[data-report]"); if (b) showReport(store.get("history", [])[+b.dataset.report]); };
   $("summary").onclick = e => { if (e.target.id === "summary") $("summary").classList.add("hidden"); };
+  $("summaryX").onclick = () => $("summary").classList.add("hidden");
+  $("reportBtn").onclick = () => showReport(currentSession());
   $("summaryClose").onclick = () => $("summary").classList.add("hidden");
   $("clearHist").onclick = () => { if (confirm("Delete all history?")) { store.set("history", []); renderHistory(); } };
   $("optTrans").onchange = e => { settings.trans = e.target.checked; saveSettings(); };
