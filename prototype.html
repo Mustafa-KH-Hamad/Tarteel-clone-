@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recitation Checker</title>
+<style>
+:root{--bg:#f6f4ee;--card:#fff;--ink:#1d2a24;--muted:#6b7a72;--ok:#1f8a4c;--bad:#c0392b;--skip:#d68910;--accent:#14684a}
+@media (prefers-color-scheme:dark){:root{--bg:#121714;--card:#1b231e;--ink:#e8efe9;--muted:#93a39a;--ok:#4cc27e;--bad:#ff6b5b;--skip:#f5b041;--accent:#3fbf8a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,sans-serif;padding:16px;max-width:720px;margin:auto}
+h1{font-size:1.3rem;margin:.2rem 0 1rem}
+.card{background:var(--card);border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 1px 3px #0002}
+#quran{direction:rtl;font-size:1.7rem;line-height:2.6;text-align:center;font-family:"Amiri","Scheherazade New","Traditional Arabic",serif}
+.w{padding:0 3px;border-radius:6px;transition:.2s}
+.hide .w:not(.ok):not(.bad):not(.skip){color:transparent;background:#8883}
+.ok{color:var(--ok)}.bad{color:var(--bad);background:#c0392b22;text-decoration:underline wavy}.skip{color:var(--skip);background:#d6891022}
+.cur{outline:2px dashed var(--accent)}
+.ayah{font-size:1rem;color:var(--muted)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+button{border:0;border-radius:999px;padding:12px 20px;font-size:1rem;background:var(--accent);color:#fff;cursor:pointer}
+button.sec{background:#8884;color:var(--ink)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center}
+.stats b{display:block;font-size:1.6rem}
+#heard{direction:rtl;color:var(--muted);min-height:1.5em}
+#log{font-size:.9rem;color:var(--muted);direction:rtl}
+.warn{color:var(--bad)}
+</style>
+</head>
+<body>
+<h1>Quran Recitation Checker — prototype (Al-Fatiha)</h1>
+
+<div class="card row">
+  <button id="start">🎙 Start reciting</button>
+  <button class="sec" id="reset">Reset</button>
+  <label><input type="checkbox" id="memo"> Hide text (memorization mode)</label>
+</div>
+
+<div class="card stats">
+  <div><b id="sOk">0</b>Correct</div>
+  <div><b id="sBad" style="color:var(--bad)">0</b>Mistakes</div>
+  <div><b id="sSkip" style="color:var(--skip)">0</b>Skipped</div>
+</div>
+
+<div class="card"><div id="quran"></div></div>
+<div class="card"><small>Heard:</small><div id="heard"></div></div>
+<div class="card"><small>Mistake log:</small><div id="log"></div></div>
+<p id="msg"></p>
+
+<script>
+const AYAT=[
+"بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+"الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ",
+"الرَّحْمَٰنِ الرَّحِيمِ",
+"مَالِكِ يَوْمِ الدِّينِ",
+"إِيَّاكَ نَعْبُدُ وَإِيَّاكَ نَسْتَعِينُ",
+"اهْدِنَا الصِّرَاطَ الْمُسْتَقِيمَ",
+"صِرَاطَ الَّذِينَ أَنْعَمْتَ عَلَيْهِمْ غَيْرِ الْمَغْضُوبِ عَلَيْهِمْ وَلَا الضَّالِّينَ"];
+
+// Normalize Arabic: strip diacritics, unify letter forms, so speech-to-text output can be compared.
+const norm=s=>s.replace(/[ً-ٰٟۖ-ۭـ]/g,"")
+ .replace(/[أإآٱ]/g,"ا").replace(/ة/g,"ه").replace(/ى/g,"ي").replace(/ؤ/g,"و").replace(/ئ/g,"ي").trim();
+
+const words=[]; const box=document.getElementById("quran");
+AYAT.forEach((a,i)=>{a.split(/\s+/).forEach(t=>{const el=document.createElement("span");el.className="w";el.textContent=t;box.append(el," ");words.push({t,n:norm(t),el});});
+  const m=document.createElement("span");m.className="ayah";m.textContent=" ﴿"+(i+1).toLocaleString("ar-EG")+"﴾ ";box.append(m);});
+
+let ptr=0,ok=0,bad=0,skip=0;
+const $=id=>document.getElementById(id);
+function paint(){words.forEach((w,i)=>w.el.classList.toggle("cur",i===ptr));$("sOk").textContent=ok;$("sBad").textContent=bad;$("sSkip").textContent=skip;}
+function log(s){$("log").insertAdjacentHTML("afterbegin","<div>"+s+"</div>");}
+
+// Compare each heard word with the expected word; allow looking ahead to detect skipped words.
+function feed(heard){
+  for(const h of heard.split(/\s+/).map(norm).filter(Boolean)){
+    if(ptr>=words.length)break;
+    if(words[ptr].n===h){words[ptr].el.className="w ok";ok++;ptr++;continue;}
+    let found=-1;for(let k=1;k<=3&&ptr+k<words.length;k++)if(words[ptr+k].n===h){found=k;break;}
+    if(found>0){for(let k=0;k<found;k++){words[ptr+k].el.className="w skip";skip++;log("Skipped: <b>"+words[ptr+k].t+"</b>");}
+      ptr+=found;words[ptr].el.className="w ok";ok++;ptr++;}
+    else{words[ptr].el.className="w bad";bad++;log("Expected <b>"+words[ptr].t+"</b> — heard «"+h+"»");if(navigator.vibrate)navigator.vibrate(150);ptr++;}
+  }
+  if(ptr>=words.length){$("msg").textContent="✅ Finished Al-Fatiha. Mistakes: "+bad+", skipped: "+skip;stop();}
+  paint();
+}
+
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec,on=false;
+function stop(){on=false;rec&&rec.stop();$("start").textContent="🎙 Start reciting";}
+$("start").onclick=()=>{
+  if(!SR){$("msg").innerHTML='<span class="warn">Speech recognition is not supported in this browser. Please use Google Chrome.</span>';return;}
+  if(on)return stop();
+  rec=new SR();rec.lang="ar-SA";rec.continuous=true;rec.interimResults=true;
+  rec.onresult=e=>{let interim="";for(let i=e.resultIndex;i<e.results.length;i++){const r=e.results[i];if(r.isFinal)feed(r[0].transcript);else interim+=r[0].transcript;}$("heard").textContent=interim;};
+  rec.onend=()=>{if(on)rec.start();};
+  rec.onerror=e=>{if(e.error==="not-allowed"){$("msg").innerHTML='<span class="warn">Microphone permission denied.</span>';stop();}};
+  rec.start();on=true;$("start").textContent="⏹ Stop";$("msg").textContent="Listening… begin with Bismillah.";
+};
+$("reset").onclick=()=>{stop();ptr=ok=bad=skip=0;words.forEach(w=>w.el.className="w");$("log").innerHTML="";$("heard").textContent="";$("msg").textContent="";paint();};
+$("memo").onchange=e=>box.classList.toggle("hide",e.target.checked);
+paint();
+</script>
+</body>
+</html>
