@@ -65,3 +65,4 @@ button.small{font-size:.85rem;padding:6px 12px;margin-top:8px}
 .modal{position:fixed;inset:0;background:#0007;display:flex;align-items:center;justify-content:center;padding:16px;z-index:10}
 .modal .card{max-width:420px;width:100%}.hidden{display:none}
 @media (max-width:480px){.stats b{font-size:1.25rem}.pick{grid-template-columns:1fr 1fr}}
+.diag{font-size:.75rem;margin-top:4px;direction:ltr}

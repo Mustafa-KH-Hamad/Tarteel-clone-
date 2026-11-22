@@ -196,37 +196,45 @@ function feed(text) {
 const BROWSER_MSG = "Recitation checking does not work in this browser. Please open this page in Google Chrome (Android, Windows, Mac) or Microsoft Edge, or Safari on iPhone.";
 function fatal(t) { msg(t, true); alert(t); }
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rec = null, listening = false, prevFinal = "";
+let rec = null, listening = false, committed = {}, trail = [];
+function diag(ev) {
+  if (trail[trail.length - 1] === ev) return;
+  trail.push(ev); if (trail.length > 8) trail.shift();
+  $("diag").textContent = "Status: " + trail.join(" → ");
+}
 
 function startListening() {
   if (!SR || navigator.brave) { fatal(BROWSER_MSG); return; }
   if (ptr >= words.length) setStart(startPtr);
   rec = new SR();
   rec.lang = "ar-SA"; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
-  prevFinal = "";
+  committed = {};
   rec.onresult = e => {
-    let interim = "";
+    let shown = "";
     for (let i = e.resultIndex; i < e.results.length; i++) {
-      const r = e.results[i], t = r[0].transcript.trim();
-      if (!r.isFinal) { interim += " " + t; continue; }
-      // Some Android versions repeat earlier final text: only process the new part.
-      let fresh = t;
-      if (prevFinal && t.startsWith(prevFinal)) fresh = t.slice(prevFinal.length);
-      else if (t === prevFinal) fresh = "";
-      prevFinal = t;
-      if (fresh.trim()) feed(fresh);
+      const r = e.results[i], ws = r[0].transcript.trim().split(/\s+/).filter(Boolean);
+      shown += " " + ws.join(" ");
+      // Check words as soon as they are stable (all but the last 2 while still speaking),
+      // so mistakes show up during continuous recitation, not only after a pause.
+      const done = committed[i] || 0, upto = r.isFinal ? ws.length : ws.length - 2;
+      if (upto > done) { feed(ws.slice(done, upto).join(" ")); committed[i] = upto; }
     }
-    $("heard").textContent = interim.trim() || prevFinal || "…";
+    $("heard").textContent = shown.trim() || "…";
+    diag("result");
   };
   rec.onerror = e => {
+    diag("error:" + e.error);
     if (e.error === "not-allowed" || e.error === "service-not-allowed") { msg("Microphone permission was denied. Allow the microphone for this site and try again.", true); stopListening(); }
     else if (e.error === "network") { stopListening(); fatal("Speech recognition failed (network error). This happens in browsers such as Brave, Opera or Firefox that block Google's speech service, or when you are offline.\n\n" + BROWSER_MSG); }
     else if (e.error === "audio-capture") { stopListening(); fatal("No microphone was found. Check that a microphone is connected and not used by another app."); }
   };
-  rec.onaudiostart = () => msg("🎤 Microphone is on — start reciting.");
-  rec.onspeechstart = () => msg("👂 Hearing you…");
-  rec.onend = () => { if (listening) { prevFinal = ""; try { rec.start(); } catch {} } };
-  try { rec.start(); } catch {}
+  rec.onstart = () => diag("start");
+  rec.onsoundstart = () => diag("sound");
+  rec.onaudiostart = () => diag("mic-on") || msg("🎤 Microphone is on — start reciting.");
+  rec.onspeechstart = () => diag("speech") || msg("👂 Hearing you…");
+  rec.onend = () => { diag("end"); if (listening) { committed = {}; try { rec.start(); } catch (err) { diag("restart-failed"); } } };
+  trail = []; diag("starting");
+  try { rec.start(); } catch (err) { diag("start-failed:" + err.message); }
   listening = true;
   $("micBtn").textContent = "⏹ Stop"; $("micBtn").classList.add("on");
   msg("Listening… start reciting.");
