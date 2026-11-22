@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tilawa Checker</title>
+<meta name="description" content="Free Quran recitation checker: recite and get your mistakes highlighted and counted.">
+<meta name="theme-color" content="#14684a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Amiri+Quran&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">۞</span> Tilawa Checker</div>
+  <nav class="tabs">
+    <button data-view="recite" class="active">Recite</button>
+    <button data-view="history">History</button>
+    <button data-view="settings">Settings</button>
+  </nav>
+</header>
+
+<main>
+  <!-- RECITE -->
+  <section id="view-recite" class="view active">
+    <div class="card pick">
+      <label>Surah
+        <select id="surah"></select>
+      </label>
+      <label>From ayah
+        <select id="fromAyah"></select>
+      </label>
+    </div>
+
+    <div class="card stats">
+      <div><b id="sOk">0</b><span>Correct</span></div>
+      <div class="bad"><b id="sBad">0</b><span>Mistakes</span></div>
+      <div class="skip"><b id="sSkip">0</b><span>Skipped</span></div>
+      <div><b id="sPct">–</b><span>Accuracy</span></div>
+    </div>
+
+    <div class="card mushaf-card">
+      <div id="surahTitle" class="surah-title"></div>
+      <div id="bismillah" class="bismillah">بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ ٱلرَّحِيمِ</div>
+      <div id="mushaf" class="mushaf" dir="rtl" lang="ar"></div>
+    </div>
+
+    <div class="card live">
+      <small>Heard</small>
+      <div id="heard" dir="rtl" lang="ar">…</div>
+      <div id="msg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <h3>Mistakes this session</h3>
+      <ol id="mistakeList" class="mlist"></ol>
+      <p id="noMistakes" class="muted">No mistakes yet.</p>
+    </div>
+
+    <div class="dock">
+      <button id="memoBtn" class="round sec" title="Hide text (memorization mode)">👁</button>
+      <button id="micBtn" class="mic">🎙 Start</button>
+      <button id="resetBtn" class="round sec" title="Restart">↺</button>
+    </div>
+  </section>
+
+  <!-- HISTORY -->
+  <section id="view-history" class="view">
+    <div class="card stats" id="totals"></div>
+    <div class="card">
+      <h3>Words you miss most often</h3>
+      <ol id="weakList" class="mlist"></ol>
+    </div>
+    <div class="card">
+      <h3>Past sessions</h3>
+      <div id="sessions"></div>
+      <button id="clearHist" class="sec small">Clear history</button>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="view-settings" class="view">
+    <div class="card settings">
+      <label><input type="checkbox" id="optTrans"> Show English translation</label>
+      <label><input type="checkbox" id="optSound" checked> Beep on mistake</label>
+      <label><input type="checkbox" id="optVibrate" checked> Vibrate on mistake</label>
+      <label><input type="checkbox" id="optReveal" checked> In memorization mode, reveal the word I got wrong</label>
+      <label>Font size <input type="range" id="optFont" min="20" max="48" value="30"></label>
+      <label>Strictness
+        <select id="optStrict">
+          <option value="0">Lenient (fewer false alarms)</option>
+          <option value="1" selected>Normal</option>
+          <option value="2">Strict (exact words)</option>
+        </select>
+      </label>
+    </div>
+    <div class="card muted about">
+      <h3>How it works</h3>
+      <p>Choose a surah, press <b>Start</b> and recite. Each word turns <span class="ok">green</span> when it is correct, <span class="bad">red</span> when it is wrong, and <span class="skip">orange</span> when you skip it. You can tap any word to start from there.</p>
+      <p>Speech is recognised by your browser's built-in speech engine (Google Chrome works best), so an internet connection is needed. It checks <b>words</b>; it cannot judge tajweed, and it may sometimes mishear a word.</p>
+      <p>Quran text: Uthmani script from The Noble Qur'an Encyclopedia (quranenc.com), translation Saheeh International, via the open <i>quran-json</i> dataset (CC BY-SA 4.0).</p>
+    </div>
+  </section>
+</main>
+
+<div id="summary" class="modal hidden">
+  <div class="card">
+    <h2>Session finished</h2>
+    <div id="summaryBody"></div>
+    <button id="summaryClose">OK</button>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
