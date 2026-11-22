@@ -35,7 +35,8 @@ function lev(a, b) {
 function same(expKey, heardKey) {
   if (!expKey || !heardKey) return false;
   if (expKey === heardKey) return true;
-  const strict = settings.strict;
+  // The on-device model is less exact than Google's engine, so "Normal" is a bit more forgiving there.
+  const strict = settings.strict === 1 && useLocal() ? 0 : settings.strict;
   const a = skel(expKey), b = skel(heardKey);
   if (!a || !b) return a === b && lev(expKey, heardKey) <= (strict === 2 ? 0 : 2); // words made only of ا/و/ي
   if (a === b) return strict < 2 || expKey.length <= 3;
@@ -45,7 +46,7 @@ function same(expKey, heardKey) {
 }
 
 /* ---------- Settings ---------- */
-const settings = Object.assign({ trans: false, sound: true, vibrate: true, reveal: true, font: 26, strict: 1, memo: false, theme: "" },
+const settings = Object.assign({ trans: false, sound: true, vibrate: true, reveal: true, font: 26, strict: 1, memo: false, theme: "", engine: "auto" },
   store.get("settings", {}));
 function saveSettings() { store.set("settings", settings); applySettings(); }
 function applySettings() {
@@ -57,7 +58,7 @@ function applySettings() {
   $("transPanel").style.display = settings.trans ? "" : "none";
   $("optTrans").checked = settings.trans; $("optSound").checked = settings.sound;
   $("optVibrate").checked = settings.vibrate; $("optReveal").checked = settings.reveal;
-  $("optFont").value = settings.font; $("optStrict").value = settings.strict; $("optTheme").value = settings.theme;
+  $("optFont").value = settings.font; $("optStrict").value = settings.strict; $("optTheme").value = settings.theme; $("optEngine").value = settings.engine;
   showTranslation();
 }
 
@@ -327,9 +328,13 @@ function diag(ev) {
   $("diag").textContent = "Status: " + trail.join(" → ");
 }
 
+// Which speech engine: the browser's (Google, fast, needs Chrome/Edge/Safari) or the on-device Quran AI model.
+const useLocal = () => settings.engine === "local" || (settings.engine !== "browser" && (!SR || !!navigator.brave));
+
 function startListening() {
-  if (!SR || navigator.brave) { fatal(BROWSER_MSG); return; }
   if (ptr >= words.length) setStart(startPtr);
+  if (useLocal()) { startLocal(); return; }
+  if (!SR) { fatal(BROWSER_MSG); return; }
   rec = new SR();
   rec.lang = "ar-SA"; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
   committed = {};
@@ -357,7 +362,7 @@ function startListening() {
   rec.onerror = e => {
     diag("error:" + e.error);
     if (e.error === "not-allowed" || e.error === "service-not-allowed") { stopListening(); fatal("Microphone permission was denied. Allow the microphone for this site and try again."); }
-    else if (e.error === "network") { stopListening(); fatal("Speech recognition failed (network error). This happens in browsers such as Brave, Opera or Firefox that block Google's speech service, or when you are offline.\n\n" + BROWSER_MSG); }
+    else if (e.error === "network") { stopListening(); fatal("This browser's speech service is not available (network error). Switching to the on-device Quran speech model — press the microphone again.\n\n(You can change this in Settings → Speech engine.)"); settings.engine = "local"; saveSettings(); }
     else if (e.error === "audio-capture") { stopListening(); fatal("No microphone was found. Check that a microphone is connected and not used by another app."); }
   };
   rec.onstart = () => diag("start");
@@ -367,7 +372,7 @@ function startListening() {
   trail = []; diag("starting");
   try { rec.start(); } catch (err) { diag("start-failed:" + err.message); }
   listening = true;
-  $("micLabel").textContent = "Stop"; $("micBtn").classList.add("on"); $("dot").classList.add("on");
+  setMicUI(true);
   msg("Starting microphone…");
 }
 
@@ -375,10 +380,136 @@ function stopListening(finished) {
   const was = listening;
   listening = false;
   if (rec) { try { rec.stop(); } catch {} }
+  stopLocal();
   if (pending.length) feed("", true);
-  $("micLabel").textContent = "Start"; $("micBtn").classList.remove("on"); $("dot").classList.remove("on");
+  setMicUI(false);
   if (was) msg("Stopped. Press the microphone to continue.");
   if (was && stats.ok + stats.bad + stats.skip > 0) saveSession(finished);
+}
+
+/* ---------- On-device speech engine (Brave, Firefox, offline) ---------- */
+// Microphone audio is cut into phrases at natural pauses and transcribed by a Quran-trained
+// Whisper model running in a Web Worker. Slower than Chrome's engine (a word check arrives after
+// each pause) but works in any modern browser and never sends audio anywhere.
+let worker = null, workerReady = false, mic = null, audioCtx2 = null, proc = null;
+let buf = [], bufLen = 0, preroll = [], inSpeech = false, silenceMs = 0, noise = 0.003, busy = false, queued = null, chunkId = 0;
+const RATE = 16000;
+
+function getWorker() {
+  if (worker) return worker;
+  worker = new Worker("asr-worker.js?v=7", { type: "module" });
+  const files = {};
+  worker.onmessage = e => {
+    const m = e.data;
+    if (m.type === "progress") {
+      files[m.file] = m; let a = 0, t = 0;
+      for (const f of Object.values(files)) { a += f.loaded; t += f.total; }
+      msg(`⬇️ Downloading the Quran speech model (only the first time): ${Math.round(a / 1e6)} / ${Math.round(t / 1e6)} MB`);
+    } else if (m.type === "ready") {
+      workerReady = true; diag("model-ready" + (m.device ? ":" + m.device : ""));
+      if (listening) msg("🎤 Listening (on-device) — recite, and pause briefly between phrases.");
+      if (pendingStart) { pendingStart = false; openMic(); }
+    } else if (m.type === "error") {
+      diag("model-error"); listening = false; setMicUI(false);
+      fatal("The speech model could not be loaded: " + m.message + "\nCheck your internet connection and try again.");
+    } else if (m.type === "text") {
+      busy = false; diag(`heard(${m.ms || "?"}ms)`);
+      if (m.error) diag("model-failed");
+      const text = cleanModelText(m.text);
+      if (text && listening) { $("heard").textContent = text; feed(text); }
+      if (queued) { const q = queued; queued = null; sendChunk(q); }
+    }
+  };
+  return worker;
+}
+let pendingStart = false;
+
+function setMicUI(on) {
+  $("micLabel").textContent = on ? "Stop" : "Start";
+  $("micBtn").classList.toggle("on", on); $("dot").classList.toggle("on", on);
+}
+
+function startLocal() {
+  listening = true; setMicUI(true); trail = []; diag("on-device");
+  getWorker();
+  if (workerReady) { openMic(); return; }
+  pendingStart = true;
+  msg("Preparing the on-device Quran speech model…");
+  worker.postMessage({ type: "load" });
+}
+
+async function openMic() {
+  try {
+    mic = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  } catch (err) {
+    listening = false; setMicUI(false);
+    fatal("Microphone permission was denied or no microphone was found. Allow the microphone for this site and try again."); return;
+  }
+  if (!listening) { mic.getTracks().forEach(t => t.stop()); return; }
+  audioCtx2 = new (window.AudioContext || window.webkitAudioContext)();
+  const src = audioCtx2.createMediaStreamSource(mic);
+  proc = audioCtx2.createScriptProcessor(4096, 1, 1);
+  const ratio = audioCtx2.sampleRate / RATE;
+  proc.onaudioprocess = e => {
+    if (!listening) return;
+    const input = e.inputBuffer.getChannelData(0);
+    const out = new Float32Array(Math.floor(input.length / ratio));
+    for (let i = 0; i < out.length; i++) out[i] = input[Math.floor(i * ratio)];
+    onFrame(out);
+  };
+  src.connect(proc); proc.connect(audioCtx2.destination);
+  buf = []; bufLen = 0; preroll = []; inSpeech = false; silenceMs = 0;
+  diag("mic-on");
+  msg("🎤 Listening (on-device) — recite, and pause briefly between phrases.");
+}
+
+function onFrame(f) {
+  let sum = 0; for (let i = 0; i < f.length; i++) sum += f[i] * f[i];
+  const rms = Math.sqrt(sum / f.length), ms = f.length / RATE * 1000;
+  const speaking = rms > Math.max(0.008, noise * 3);
+  if (!inSpeech) {
+    noise = noise * 0.95 + rms * 0.05;
+    preroll.push(f); if (preroll.length > 2) preroll.shift();
+    if (speaking) { inSpeech = true; silenceMs = 0; buf = preroll.slice(); bufLen = buf.reduce((n, x) => n + x.length, 0); preroll = []; diag("speech"); msg("👂 Hearing you…"); }
+    return;
+  }
+  buf.push(f); bufLen += f.length;
+  silenceMs = speaking ? 0 : silenceMs + ms;
+  const secs = bufLen / RATE;
+  // Send a phrase at a pause (or every 7 s during long continuous recitation).
+  if ((silenceMs >= 450 && secs >= 0.8) || secs >= 7) flushChunk();
+  else if (silenceMs >= 1500) { inSpeech = false; buf = []; bufLen = 0; }
+}
+
+function flushChunk() {
+  if (!bufLen) return;
+  const audio = new Float32Array(bufLen); let o = 0;
+  for (const x of buf) { audio.set(x, o); o += x.length; }
+  buf = []; bufLen = 0; inSpeech = silenceMs < 450;
+  if (busy) {   // still working on the previous phrase: join this one onto the waiting phrase
+    if (queued) { const j = new Float32Array(queued.length + audio.length); j.set(queued); j.set(audio, queued.length); queued = j; }
+    else queued = audio;
+    return;
+  }
+  sendChunk(audio);
+}
+// Remove runs of the same word repeated 3+ times (a known Whisper glitch on noise).
+function cleanModelText(t) {
+  const out = [];
+  for (const w of (t || "").split(/\s+/).filter(Boolean)) {
+    const n = out.length;
+    if (n >= 2 && key(out[n - 1]) === key(w) && key(out[n - 2]) === key(w)) continue;
+    out.push(w);
+  }
+  return out.join(" ");
+}
+function sendChunk(audio) { busy = true; diag("thinking"); worker.postMessage({ type: "transcribe", id: ++chunkId, audio }, [audio.buffer]); }
+
+function stopLocal() {
+  pendingStart = false;
+  if (proc) { flushChunk(); proc.disconnect(); proc.onaudioprocess = null; proc = null; }
+  if (audioCtx2) { audioCtx2.close().catch(() => {}); audioCtx2 = null; }
+  if (mic) { mic.getTracks().forEach(t => t.stop()); mic = null; }
 }
 
 /* ---------- History ---------- */
@@ -466,6 +597,7 @@ function bind() {
   $("optFont").oninput = e => { settings.font = +e.target.value; saveSettings(); };
   $("optStrict").onchange = e => { settings.strict = +e.target.value; saveSettings(); };
   $("optTheme").onchange = e => { settings.theme = e.target.value; saveSettings(); };
+  $("optEngine").onchange = e => { stopListening(); settings.engine = e.target.value; saveSettings(); };
 }
 
 async function init() {
@@ -479,7 +611,7 @@ async function init() {
   $("surah").value = words[typeof last === "number" ? last : 0].s; fillAyahSelect();
   setStart(typeof last === "number" ? last : 0);
   renderHistory();
-  if (!SR || navigator.brave) msg("⚠️ " + BROWSER_MSG, true);
+  if (useLocal()) msg("This browser will use the on-device Quran speech model (downloads about 100 MB the first time). Press the microphone to begin.");
   else msg("Choose a surah and press the microphone to begin.");
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
 }

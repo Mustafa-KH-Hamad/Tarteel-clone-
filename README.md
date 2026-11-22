@@ -17,8 +17,16 @@ are counted through the session and saved to your history.
 - Handles isti'adha/basmala before reciting, repeated words, and disconnected letters (الم، يس…)
 - Installable on your phone's home screen; the Quran text works offline
 
+## Speech engines
+- **Browser engine** (Chrome, Edge, Safari): Google's speech service; fast, word-by-word, needs internet.
+- **On-device Quran AI** (used automatically in Brave, Firefox and others): the Quran-trained Whisper model
+  [tarteel-ai/whisper-base-ar-quran](https://huggingface.co/tarteel-ai/whisper-base-ar-quran) (Apache-2.0), ONNX build
+  [aaqibhabib/whisper-base-ar-quran-onnx](https://huggingface.co/aaqibhabib/whisper-base-ar-quran-onnx), run in the browser with
+  [Transformers.js](https://github.com/huggingface/transformers.js). Downloads about 105 MB once, then is cached; audio never leaves
+  the device. It checks each phrase after you pause, so it is slower than the browser engine.
+- Switch in Settings → Speech engine.
+
 ## Limits
-- Uses the browser's built-in speech recognition (best in **Google Chrome**), which needs internet.
 - It checks **words**, not tajweed or small vowel (haraka) mistakes, and can sometimes mishear a word.
   If you get false alarms, set *Strictness* to *Lenient* in Settings.
 

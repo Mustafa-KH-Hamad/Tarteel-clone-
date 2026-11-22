@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Amiri+Quran&family=Amiri:wght@400;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 <header class="top">
@@ -110,6 +110,13 @@
           <option value="2">Strict (exact words)</option>
         </select>
       </label>
+      <label class="row"><span>Speech engine</span>
+        <select id="optEngine">
+          <option value="auto">Automatic</option>
+          <option value="browser">Browser (fast — Chrome, Edge, Safari)</option>
+          <option value="local">On-device Quran AI (works in Brave, Firefox; ~100 MB download)</option>
+        </select>
+      </label>
       <label class="row"><span>Theme</span>
         <select id="optTheme">
           <option value="">Automatic</option>
@@ -121,7 +128,7 @@
     <div class="panel about">
       <h3>How it works</h3>
       <p>Choose a surah, press the microphone and recite. Each word turns <span class="ok">green</span> when it is correct, <span class="bad">red</span> when it is wrong and <span class="skip">orange</span> when you skip it. You can go back and repeat earlier ayat at any time; that is not counted as a mistake. Tap any word to start from there.</p>
-      <p>Speech is recognised by your browser's built-in speech service, so you need <b>Google Chrome</b>, Microsoft Edge or Safari, and an internet connection. Brave and Firefox do not provide this service. The app checks <b>words</b>; it cannot judge tajweed, and it may sometimes mishear a word.</p>
+      <p>Speech is recognised by your browser's built-in speech service, so you need <b>Google Chrome</b>, Microsoft Edge or Safari, and an internet connection. In Brave, Firefox and other browsers without that service, the app automatically uses an <b>on-device Quran speech model</b> instead (a Whisper model trained on recitation by Tarteel AI). It downloads about 100&nbsp;MB once, runs entirely on your device, and checks each phrase when you pause. The app checks <b>words</b>; it cannot judge tajweed, and it may sometimes mishear a word.</p>
       <p class="muted">Quran text: Uthmani script from The Noble Qur'an Encyclopedia (quranenc.com); translation Saheeh International, via the open <i>quran-json</i> dataset (CC BY-SA 4.0). Page layout of the Madani mushaf via <i>quran-meta</i> (MIT).</p>
     </div>
   </section>
@@ -135,6 +142,6 @@
   </div>
 </div>
 
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>
