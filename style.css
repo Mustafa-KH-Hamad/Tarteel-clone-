@@ -175,3 +175,24 @@ select{font:inherit;font-size:.95rem;padding:8px 10px;border-radius:10px;border:
 .mitem.fixed{opacity:.6}.mitem.fixed>.ar{text-decoration:line-through}
 .fixed-tag{font-size:.75rem;color:var(--ok);font-weight:600}
 @media (prefers-reduced-motion:reduce){.w.pop,.w.flash,.page{animation:none}}
+
+/* end-of-session report */
+.modal .panel{max-width:640px;max-height:88vh;overflow-y:auto}
+.rtitle{margin:16px 0 8px}
+.report-good{font-size:1.1rem;color:var(--ok);font-weight:600;text-align:center;margin:16px 0}
+.rsec{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px;background:var(--bg)}
+.rhead{display:flex;align-items:center;gap:8px;font-size:.9rem}.rhead .badge{margin-inline-start:auto}
+.raya{font-family:"Amiri Quran",Amiri,serif;font-size:1.45rem;line-height:2.1;margin:6px 0;padding:6px 10px;background:var(--paper);color:var(--paper-ink);border-radius:8px;text-align:right}
+.rw{border-radius:5px;padding:0 3px}
+.rw.bad{color:var(--bad);background:color-mix(in srgb,var(--bad) 14%,transparent);text-decoration:underline wavy var(--bad) 1px;text-underline-offset:8px}
+.rw.skip{color:var(--skip);background:color-mix(in srgb,var(--skip) 16%,transparent)}
+.rlist{list-style:none;padding:0;margin:0}
+.ritem{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:6px 0;border-top:1px dashed var(--line);font-size:.88rem}
+.ritem:first-child{border-top:0}
+.ritem .tag{font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:999px;color:#fff;background:var(--bad)}
+.ritem.skip .tag{background:var(--skip)}
+.ritem .where{color:var(--muted);font-weight:600}
+.ritem .ar{font-family:Amiri,serif;font-size:1.25rem}
+.ritem .arrow{color:var(--muted)}
+.small-btn{padding:5px 12px;margin-top:6px;font-size:.82rem}
+.ritem,.ritem.bad,.ritem.skip{color:var(--ink)}

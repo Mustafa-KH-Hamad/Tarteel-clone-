@@ -516,14 +516,15 @@ function stopLocal() {
 function saveSession(finished) {
   const a = words[startPtr], b = words[Math.max(startPtr, Math.min(ptr, words.length) - 1)];
   const ref = w => `${QURAN[w.s].t} ${w.s + 1}:${w.a + 1}`;
-  const sess = { date: Date.now(), from: ref(a), to: ref(b), surah: a.s + 1, name: QURAN[a.s].t, ...stats, mistakes };
+  const ms = mistakes.map(m => ({ ...m, fixed: words[m.i].state === "ok" }));
+  const sess = { date: Date.now(), from: ref(a), to: ref(b), surah: a.s + 1, name: QURAN[a.s].t, ...stats, mistakes: ms };
   const hist = store.get("history", []); hist.unshift(sess); store.set("history", hist.slice(0, 300));
   const tot = stats.ok + stats.bad + stats.skip;
   $("summaryBody").innerHTML = `
     <p><b>${sess.from}</b> → <b>${sess.to}</b>${finished ? " (complete)" : ""}</p>
     <div class="stats"><div class="stat"><b>${stats.ok}</b><span>Correct</span></div><div class="stat bad"><b>${stats.bad}</b><span>Mistakes</span></div>
     <div class="stat skip"><b>${stats.skip}</b><span>Skipped</span></div><div class="stat"><b>${Math.round(100 * stats.ok / tot)}%</b><span>Accuracy</span></div></div>
-    <p class="muted">${stats.bad + stats.skip === 0 ? "ما شاء الله — no mistakes!" : "Review the highlighted words, then try again."}</p>`;
+    ${buildReport(ms)}`;
   $("summary").classList.remove("hidden");
   renderHistory();
 }
@@ -546,9 +547,57 @@ function renderHistory() {
   $("sessions").innerHTML = hist.length ? hist.slice(0, 50).map(s => {
     const n = s.ok + s.bad + s.skip;
     const range = s.from && isNaN(s.from) ? `${s.from} → ${s.to}` : `${s.surah}. ${s.name} ${s.from}–${s.to}`;
+    const more = s.mistakes && s.mistakes.length ? `<button class="btn-ghost small-btn" data-report="${hist.indexOf(s)}">View mistakes report</button>` : "";
     return `<div class="sess"><b>${range}</b> · <span class="muted">${new Date(s.date).toLocaleString()}</span><br>
-      <span class="ok">${s.ok} correct</span> · <span class="bad">${s.bad} mistakes</span> · <span class="skip">${s.skip} skipped</span> · ${n ? Math.round(100 * s.ok / n) : 0}%</div>`;
+      <span class="ok">${s.ok} correct</span> · <span class="bad">${s.bad} mistakes</span> · <span class="skip">${s.skip} skipped</span> · ${n ? Math.round(100 * s.ok / n) : 0}%<br>${more}</div>`;
   }).join("") : `<p class="muted">No sessions yet.</p>`;
+}
+
+/* ---------- End-of-session mistakes report ---------- */
+// For every ayah with a mistake: the full ayah with the wrong words highlighted, then each mistake:
+// which word (position), what you said, and the correct word.
+function buildReport(list) {
+  if (!list.length) return `<p class="report-good">ما شاء الله — no mistakes in this session!</p>`;
+  const groups = new Map();
+  for (const m of list) {
+    const k = m.s + ":" + m.ayah;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(m);
+  }
+  const html = [...groups].map(([k, ms]) => {
+    const sn = +k.split(":")[0], an = +k.split(":")[1];
+    const ay = ayahs[ayahIndex(sn - 1, an - 1)];
+    const wrong = new Map(ms.filter(m => m.i != null).map(m => [m.i, m]));
+    let text = "";
+    for (let i = ay.w0; i < ay.w1; i++) {
+      const m = wrong.get(i);
+      text += m ? `<span class="rw ${m.type}" title="${m.type === "bad" ? "You said: " + esc(m.heard) : "Skipped"}">${words[i].text}</span> ` : words[i].text + " ";
+    }
+    text += `<span class="aya-end">${arNum(an)}</span>`;
+    const items = ms.map(m => {
+      const pos = m.i != null ? m.i - ay.w0 + 1 : null;
+      const where = pos ? `Word ${pos}` : "";
+      const what = m.type === "bad"
+        ? `<span class="said">You said <span class="ar bad">${esc(m.heard) || "—"}</span></span> <span class="arrow">→</span> <span class="said">Correct: <span class="ar ok">${m.word}</span></span>`
+        : `<span class="said">You skipped</span> <span class="arrow">→</span> <span class="said">Correct: <span class="ar ok">${m.word}</span></span>`;
+      return `<li class="ritem ${m.type}"><span class="tag">${m.type === "bad" ? "Mistake" : "Skipped"}</span>
+        <span class="where">${where}</span>${what}${m.fixed ? ` <span class="fixed-tag">✓ corrected later</span>` : ""}</li>`;
+    }).join("");
+    return `<section class="rsec"><div class="rhead"><b>${QURAN[sn - 1].t} — ayah ${an}</b> <span class="muted">(${sn}:${an})</span>
+      <span class="badge">${ms.length}</span></div>
+      <div class="raya" dir="rtl" lang="ar">${text}</div><ol class="rlist">${items}</ol></section>`;
+  }).join("");
+  return `<h3 class="rtitle">Where you made mistakes</h3>${html}`;
+}
+const esc = t => String(t || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function showReport(sess) {
+  const tot = sess.ok + sess.bad + sess.skip;
+  $("summaryBody").innerHTML = `<p><b>${sess.from}</b> → <b>${sess.to}</b> · <span class="muted">${new Date(sess.date).toLocaleString()}</span></p>
+    <div class="stats"><div class="stat"><b>${sess.ok}</b><span>Correct</span></div><div class="stat bad"><b>${sess.bad}</b><span>Mistakes</span></div>
+    <div class="stat skip"><b>${sess.skip}</b><span>Skipped</span></div><div class="stat"><b>${tot ? Math.round(100 * sess.ok / tot) : 0}%</b><span>Accuracy</span></div></div>
+    ${buildReport(sess.mistakes || [])}`;
+  $("summary").classList.remove("hidden");
 }
 
 /* ---------- Wiring ---------- */
@@ -588,6 +637,8 @@ function bind() {
   $("micBtn").onclick = () => listening ? stopListening() : startListening();
   $("resetBtn").onclick = () => { stopListening(); setStart(startPtr); };
   $("memoBtn").onclick = () => { settings.memo = !settings.memo; saveSettings(); };
+  $("sessions").onclick = e => { const b = e.target.closest("[data-report]"); if (b) showReport(store.get("history", [])[+b.dataset.report]); };
+  $("summary").onclick = e => { if (e.target.id === "summary") $("summary").classList.add("hidden"); };
   $("summaryClose").onclick = () => $("summary").classList.add("hidden");
   $("clearHist").onclick = () => { if (confirm("Delete all history?")) { store.set("history", []); renderHistory(); } };
   $("optTrans").onchange = e => { settings.trans = e.target.checked; saveSettings(); };
