@@ -203,7 +203,7 @@ function beep() {
 function decorate(w, pop) {
   const el = w.el; if (!el) return;
   el.className = "w" + (w.state ? " " + w.state : "") + (w.state && w.state !== "ok" && settings.reveal ? " reveal" : "") + (pop ? " pop" : "");
-  el.title = w.state === "bad" ? `Mistake — heard: ${w.heard}` : w.state === "skip" ? "Skipped" : "";
+  el.title = w.state === "unsure" ? "Not heard clearly — not counted as a mistake" : w.state === "bad" ? `Mistake — heard: ${w.heard}` : w.state === "skip" ? "Skipped" : "";
 }
 // Ayah-end marker turns red and shows how many mistakes that ayah has.
 function ayahBadge(g) {
@@ -222,7 +222,8 @@ function mark(i, state, heard) {
     if (prev === "bad" || prev === "skip") { ayahBadge(w.g); renderMistakes(); }   // corrected on repeat
     return;
   }
-  if (prev === "ok" && state === "skip") return;   // passing over words already recited correctly
+  if (prev === "ok" && (state === "skip" || state === "unsure")) return;   // passing over words already recited correctly
+  if (state === "unsure") { w.state = "unsure"; decorate(w); return; }
   w.state = state; w.heard = heard || ""; stats[state]++;
   mistakes.push({ type: state, i, word: w.text, key: w.key, heard: w.heard, s: w.s + 1, ayah: w.a + 1 });
   decorate(w, true); ayahBadge(w.g); renderMistakes();
@@ -267,6 +268,32 @@ function backMatch(hk, nextK) {
   return -1;
 }
 
+// Words between here and the matched word were not heard. The speech engine often drops a single
+// short word even when it was recited, so (unless Strict) one missing word is shown as "unsure", not a mistake.
+function skipTo(fwd) {
+  const lenient = settings.strict < 2 && fwd === 1;
+  for (let k = 0; k < fwd; k++) mark(ptr++, lenient ? "unsure" : "skip");
+  mark(ptr++, "ok");
+}
+
+// While the speech engine is still deciding (interim results), only accept words that clearly match.
+// Anything doubtful waits for the engine's final answer. Returns how many heard words were used.
+function softFeed(list) {
+  if (pending.length) return 0;
+  let n = 0;
+  for (; n < list.length && ptr < words.length; n++) {
+    const hk = key(list[n]), exp = words[ptr];
+    if (!hk) continue;
+    if (exp.muq) break;
+    if (same(exp.key, hk)) { mark(ptr++, "ok"); continue; }
+    const atStart = (ptr === startPtr && stats.ok === 0) || exp.first;
+    if (atStart && OPENING.has(skel(hk))) continue;
+    break;
+  }
+  if (n) paint(true);
+  return n;
+}
+
 function feed(text, flush) {
   const heard = pending.concat(text.split(/\s+/).map(t => ({ raw: t, k: key(t) })).filter(h => h.k));
   pending = [];
@@ -294,27 +321,47 @@ function feed(text, flush) {
     // F. repeated the previous word or two — not a mistake
     if ((ptr > 0 && same(words[ptr - 1].key, hk)) || (ptr > 1 && same(words[ptr - 2].key, hk))) continue;
 
+    // F2. the speech engine added an extra word that you did not say (the next heard word is the expected one)
+    if (nextK && same(exp.key, nextK)) continue;
+    // F3. not sure yet — wait for the next word before judging (avoids false mistakes)
+    if (!nextK && !flush) { pending = heard.slice(h); break; }
+
     // G. skipped ahead a few words
     let fwd = -1;
     for (let k = 1; k <= 4 && ptr + k < words.length; k++) if (same(words[ptr + k].key, hk)) { fwd = k; break; }
     const fwdConfirmed = fwd > 0 && (!nextK || (words[ptr + fwd + 1] && same(words[ptr + fwd + 1].key, nextK)));
-    if (fwdConfirmed) { for (let k = 0; k < fwd; k++) mark(ptr++, "skip"); mark(ptr++, "ok"); continue; }
+    if (fwdConfirmed) { skipTo(fwd); continue; }
 
     // H. went back to re-recite earlier ayat — move there, no mistake
-    if (!nextK && !flush && backMatch(hk, null) >= 0) { pending = heard.slice(h); break; }  // wait for next word to confirm
     const back = nextK ? backMatch(hk, nextK) : -1;
     if (back >= 0) {
       ptr = back; mark(ptr++, "ok"); mark(ptr++, "ok"); h++;
       msg("↩ Going back — repeating is fine.");
       continue;
     }
-    if (fwd > 0) { for (let k = 0; k < fwd; k++) mark(ptr++, "skip"); mark(ptr++, "ok"); continue; }
+    if (fwd > 0) { skipTo(fwd); continue; }
 
     // I. wrong word
     mark(ptr++, "bad", heard[h].raw);
   }
   paint(true);
   if (ptr >= words.length) { msg("✅ You completed the Quran. ما شاء الله"); stopListening(true); }
+}
+
+// Google gives several guesses for each phrase; use the one that matches the expected ayat best.
+function bestAlternative(r, done) {
+  let best = null, bestScore = -1;
+  for (let a = 0; a < r.length; a++) {
+    const ws = r[a].transcript.trim().split(/\s+/).filter(Boolean);
+    const window = [];
+    for (let j = Math.max(0, ptr - 3); j < Math.min(words.length, ptr + ws.length + 6); j++) window.push(words[j].key);
+    let score = 0;
+    for (const w of ws.slice(done)) { const k = key(w); if (window.some(x => same(x, k))) score++; }
+    score -= a * 0.01;                       // prefer the engine's own first choice on ties
+    if (score > bestScore) { bestScore = score; best = ws; }
+  }
+  if (best !== null && r[0].transcript.trim().split(/\s+/).filter(Boolean).length < done) return r[0].transcript.trim().split(/\s+/).filter(Boolean);
+  return best || [];
 }
 
 /* ---------- Speech recognition ---------- */
@@ -336,25 +383,30 @@ function startListening() {
   if (useLocal()) { startLocal(); return; }
   if (!SR) { fatal(BROWSER_MSG); return; }
   rec = new SR();
-  rec.lang = "ar-SA"; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
+  rec.lang = "ar-SA"; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 5;
   committed = {};
   rec.onresult = e => {
     let shown = "";
     for (let i = e.resultIndex; i < e.results.length; i++) {
-      const r = e.results[i], ws = r[0].transcript.trim().split(/\s+/).filter(Boolean);
-      shown += " " + ws.join(" ");
-      // Check words as soon as they are stable (all but the last 2 while still speaking),
-      // so mistakes show up during continuous recitation, not only after a pause.
-      const done = committed[i] || 0, upto = r.isFinal ? ws.length : ws.length - 1;
-      if (upto > done) { feed(ws.slice(done, upto).join(" ")); committed[i] = upto; }
-      // If the last word stays the same for a moment, it is final enough: check it too.
-      if (!r.isFinal) {
+      const r = e.results[i], done = committed[i] || 0;
+      if (r.isFinal) {
+        // Final answer: pick the alternative transcript that best fits the Quran text, then judge it fully.
+        const ws = bestAlternative(r, done);
+        shown += " " + ws.join(" ");
+        if (ws.length > done) feed(ws.slice(done).join(" "));
+        committed[i] = ws.length;
+        clearTimeout(idleTimer);
+      } else {
+        // Still speaking: turn clearly-correct words green right away; never mark a mistake from a guess.
+        const ws = r[0].transcript.trim().split(/\s+/).filter(Boolean);
+        shown += " " + ws.join(" ");
+        committed[i] = done + softFeed(ws.slice(done, ws.length - 1));
         clearTimeout(idleTimer);
         idleTimer = setTimeout(() => {
           const d = committed[i] || 0;
-          if (listening && ws.length > d) { feed(ws.slice(d).join(" ")); committed[i] = ws.length; }
-        }, 650);
-      } else clearTimeout(idleTimer);
+          if (listening && ws.length > d) committed[i] = d + softFeed(ws.slice(d));
+        }, 500);
+      }
     }
     $("heard").textContent = shown.trim();
     diag("result");
