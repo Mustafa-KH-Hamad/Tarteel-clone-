@@ -18,8 +18,9 @@ from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from quran_muaalem.engine.serve import QuranMuaalemAPI
-from quran_muaalem.app.serve import run_phonetic_search, run_phonetization_and_error
+from quran_transcript import quran_phonetizer, explain_error
 from quran_transcript.phonetics.moshaf_attributes import MoshafAttributes
+from quran_transcript.phonetics.search import PhoneticSearch, NoPhonemesSearchResult
 
 MODEL = os.environ.get("MUAALEM_MODEL", "obadx/muaalem-model-v3_2")
 MAX_SECONDS = 15
@@ -33,6 +34,22 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 
 NOTICE = ("This is an AI model and may make mistakes. It is an aid only and not a substitute "
           "for a proficient, authorised Quran teacher.")
+
+
+searcher = PhoneticSearch()
+
+
+def find_in_quran(phonemes: str, error_ratio: float):
+    """Which part of the Quran was recited (best match), or None."""
+    try:
+        results = searcher.search(phonemes, error_ratio=error_ratio)
+    except NoPhonemesSearchResult:
+        return None
+    if not results:
+        return None
+    r = results[0]
+    span = lambda p: {"sura_idx": p.sura_idx, "aya_idx": p.aya_idx, "uthmani_word_idx": p.uthmani_word_idx}
+    return {"start": span(r.start), "end": span(r.end), "uthmani_text": searcher.get_uthmani_from_result(r)}
 
 
 class _Upload:
@@ -69,11 +86,9 @@ async def check(
     if not phonemes:
         return {"found": False, "phonemes": "", "seconds": round(time.time() - t0, 2)}
 
-    results, message = run_phonetic_search(phonemes, error_ratio)
-    if not results:
-        return {"found": False, "phonemes": phonemes, "message": message, "seconds": round(time.time() - t0, 2)}
-
-    best = results[0]
+    best = find_in_quran(phonemes, error_ratio)
+    if not best:
+        return {"found": False, "phonemes": phonemes, "seconds": round(time.time() - t0, 2)}
     moshaf = MoshafAttributes(
         rewaya="hafs",
         madd_monfasel_len=madd_monfasel_len,
@@ -81,8 +96,10 @@ async def check(
         madd_mottasel_waqf=madd_mottasel_len,
         madd_aared_len=madd_aared_len,
     )
-    reference, errors = run_phonetization_and_error(best.uthmani_text, moshaf, phonemes)
-    text = best.uthmani_text
+    text = best["uthmani_text"]
+    ref = quran_phonetizer(text, moshaf, remove_spaces=True)
+    reference = ref.phonemes
+    errors = explain_error(uthmani_text=text, ref_ph_text=ref.phonemes, predicted_ph_text=phonemes, mappings=ref.mappings)
 
     out = []
     for e in errors:
@@ -104,8 +121,8 @@ async def check(
 
     return {
         "found": True,
-        "start": best.start.model_dump(),
-        "end": best.end.model_dump(),
+        "start": best["start"],
+        "end": best["end"],
         "uthmani_text": text,
         "phonemes": phonemes,
         "reference": reference,
