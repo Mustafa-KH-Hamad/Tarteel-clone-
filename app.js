@@ -182,8 +182,10 @@ function playAyah(g, bism) {
   const ay = ayahs[g];
   if (+$("surah").value !== ay.s) { $("surah").value = ay.s; fillAyahSelect(); }
   $("fromAyah").value = ay.a; syncGoto(g);
-  const reps = +$("repeatSel").value;
-  $("playInfo").textContent = bism ? "بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ ٱلرَّحِيمِ" : `▶ ${QURAN[ay.s].t} ${ay.s + 1}:${ay.a + 1}` + (reps > 1 ? ` · ${reps - repLeft + 1}/${reps}` : "");
+  const reps = repeatCount(), loop = $("loopSel").value === "1";
+  $("playInfo").textContent = (bism ? "بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ ٱلرَّحِيمِ" : `▶ ${QURAN[ay.s].t} ${ay.s + 1}:${ay.a + 1}`)
+    + (reps === Infinity ? " · repeating this ayah ∞" : reps > 1 && !bism ? ` · ${reps - repLeft + 1}/${reps}` : "")
+    + (loop ? ` · loop round ${loopRound}` : "");
   player.src = audioUrl(g, bism);
   player.playbackRate = +$("speedSel").value;
   player.play().catch(err => {
@@ -201,22 +203,42 @@ function reachedStop(g, next) {
   if (stop === "page") return pageOfAyah[g] !== pageOfAyah[next];
   if (stop === "surah") return a.s !== b.s;
   if (stop === "juz") return juzOf(g) !== juzOf(next);
+  if (stop === "hizb") return Math.floor(hizbOf(g) / 4) !== Math.floor(hizbOf(next) / 4);
+  if (stop === "quarter") return hizbOf(g) !== hizbOf(next);
   return false;
 }
+// First ayah of the ayah / page / quarter / hizb / surah / juz that contains ayah g (for looping).
+function unitStart(g) {
+  const stop = $("stopSel").value, ay = ayahs[g], q = hizbOf(g);
+  if (stop === "page") return META.pages[pageOfAyah[g] - 1] - 1;
+  if (stop === "quarter") return META.hizbQ[q] - 1;
+  if (stop === "hizb") return META.hizbQ[q - (q % 4)] - 1;
+  if (stop === "surah") return ayahIndex(ay.s, 0);
+  if (stop === "juz") return META.juz[juzOf(g) - 1] - 1;
+  if (stop === "none") return 0;
+  return g;
+}
+const repeatCount = () => $("repeatSel").value === "inf" ? Infinity : +$("repeatSel").value;
+let loopRound = 1;
 player.onended = () => {
   if (!playing) return;
   if (bismillahFirst) { playAyah(playG, false); return; }
   if (--repLeft > 0) { playAyah(playG, false); return; }
   const next = playG + 1;
-  if (reachedStop(playG, next)) { stopPlaying(); msg("✅ Finished listening."); return; }
-  repLeft = +$("repeatSel").value;
+  repLeft = repeatCount();
+  if (reachedStop(playG, next)) {
+    if ($("loopSel").value !== "1") { stopPlaying(); msg("✅ Finished listening."); return; }
+    const first = unitStart(playG); loopRound++;              // loop forever: go back to the start of this page/hizb/surah…
+    playAyah(first, ayahs[first].a === 0 && ayahs[first].s !== 0 && ayahs[first].s !== 8);
+    return;
+  }
   const b = ayahs[next];
   playAyah(next, b.a === 0 && b.s !== 0 && b.s !== 8);       // basmala before each surah except Al-Fatihah and At-Tawbah
 };
 function startPlaying() {
   stopListening();                       // don't let the microphone hear the recitation
   const g = words[Math.min(ptr, words.length - 1)].g;
-  playing = true; repLeft = +$("repeatSel").value;
+  playing = true; repLeft = repeatCount(); loopRound = 1;
   $("playLabel").textContent = "Pause"; $("playBtn").classList.add("on");
   $("playBtn").querySelector("svg").innerHTML = '<path d="M7 4h4v16H7zM13 4h4v16h-4z"/>';
   const ay = ayahs[g];
