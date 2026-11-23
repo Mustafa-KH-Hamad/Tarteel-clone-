@@ -162,9 +162,7 @@ const RECITERS = [
   ["Saood_ash-Shuraym_128kbps", "Saud Ash-Shuraim — الشريم"],
   ["Maher_AlMuaiqly_64kbps", "Maher Al-Muaiqly — ماهر المعيقلي"],
 ];
-let playG = -1, playing = false, repLeft = 0, bismillahFirst = false;
-const player = new Audio(), preloader = new Audio();
-player.preload = "auto"; preloader.preload = "auto";
+let playG = -1, playing = false;
 const pad3 = n => String(n).padStart(3, "0");
 const audioUrl = (g, bism) => {
   const r = settings.reciter || RECITERS[0][0];
@@ -174,27 +172,6 @@ const audioUrl = (g, bism) => {
 function setPlayG(g) {
   const old = playG; playG = g;
   for (const x of [old, g]) if (x >= 0 && ayahs[x]) for (let i = ayahs[x].w0; i < ayahs[x].w1; i++) decorate(words[i]);
-}
-function playAyah(g, bism) {
-  if (g >= ayahs.length) { stopPlaying(); return; }
-  showPage(pageOfAyah[g]);
-  setPlayG(g);
-  const ay = ayahs[g];
-  if (+$("surah").value !== ay.s) { $("surah").value = ay.s; fillAyahSelect(); }
-  $("fromAyah").value = ay.a; syncGoto(g);
-  const reps = repeatCount(), loop = $("loopSel").value === "1";
-  $("playInfo").textContent = (bism ? "بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ ٱلرَّحِيمِ" : `▶ ${QURAN[ay.s].t} ${ay.s + 1}:${ay.a + 1}`)
-    + (reps === Infinity ? " · repeating this ayah ∞" : reps > 1 && !bism ? ` · ${reps - repLeft + 1}/${reps}` : "")
-    + (loop ? ` · loop round ${loopRound}` : "");
-  player.src = audioUrl(g, bism);
-  player.playbackRate = +$("speedSel").value;
-  player.play().catch(err => {
-    if (err && err.name === "AbortError") return;      // a newer ayah started loading — not an error
-    msg("Could not play the recitation. Check your internet connection.", true); stopPlaying();
-  });
-  if (!bism && g + 1 < ayahs.length) preloader.src = audioUrl(g + 1);
-  const el = words[ay.w0].el; if (el) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  bismillahFirst = bism;
 }
 function reachedStop(g, next) {
   const stop = $("stopSel").value, a = ayahs[g], b = ayahs[next];
@@ -219,40 +196,91 @@ function unitStart(g) {
   return g;
 }
 const repeatCount = () => $("repeatSel").value === "inf" ? Infinity : +$("repeatSel").value;
-let loopRound = 1;
-player.onended = () => {
-  if (!playing) return;
-  if (bismillahFirst) { playAyah(playG, false); return; }
-  if (--repLeft > 0) { playAyah(playG, false); return; }
-  const next = playG + 1;
-  repLeft = repeatCount();
-  if (reachedStop(playG, next)) {
-    if ($("loopSel").value !== "1") { stopPlaying(); msg("✅ Finished listening."); return; }
-    const first = unitStart(playG); loopRound++;              // loop forever: go back to the start of this page/hizb/surah…
-    playAyah(first, ayahs[first].a === 0 && ayahs[first].s !== 0 && ayahs[first].s !== 8);
-    return;
-  }
-  const b = ayahs[next];
-  playAyah(next, b.a === 0 && b.s !== 0 && b.s !== 8);       // basmala before each surah except Al-Fatihah and At-Tawbah
-};
-function startPlaying() {
+const needsBasmala = g => { const ay = ayahs[g]; return ay.a === 0 && ay.s !== 0 && ay.s !== 8; };
+
+// The playlist, one item at a time: { g: ayah, bism: basmala before it?, rep: plays left, round: loop round }
+const firstItem = (g, round = 1) => ({ g, bism: needsBasmala(g), rep: repeatCount(), round });
+function nextItem(it) {
+  if (it.bism) return { ...it, bism: false };
+  if (it.rep > 1) return { ...it, rep: it.rep - 1 };
+  const next = it.g + 1;
+  if (reachedStop(it.g, next)) return $("loopSel").value === "1" ? firstItem(unitStart(it.g), it.round + 1) : null;
+  return firstItem(next, it.round);
+}
+
+// Gapless playback with the Web Audio API: every ayah is downloaded and decoded while the previous
+// one plays, silence at both ends is trimmed, and the next ayah is scheduled to start exactly when
+// the previous one ends.
+let actx = null, playToken = 0, nextStart = 0, sources = [];
+const bufCache = new Map();
+function getBuf(url) {
+  if (bufCache.has(url)) return bufCache.get(url);
+  const pr = fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+    .then(ab => actx.decodeAudioData(ab)).then(trimSilence);
+  bufCache.set(url, pr); pr.catch(() => bufCache.delete(url));
+  if (bufCache.size > 16) bufCache.delete(bufCache.keys().next().value);
+  return pr;
+}
+function trimSilence(buf) {
+  const d = buf.getChannelData(0), th = 0.008, sr = buf.sampleRate;
+  let i = 0, j = d.length - 1;
+  while (i < j && Math.abs(d[i]) < th) i++;
+  while (j > i && Math.abs(d[j]) < th) j--;
+  const off = Math.max(0, i / sr - 0.04), end = Math.min(buf.duration, j / sr + 0.12);
+  return { buffer: buf, off, dur: Math.max(0.1, end - off) };
+}
+async function schedule(it, token) {
+  let b;
+  try { b = await getBuf(audioUrl(it.g, it.bism)); }
+  catch { if (token === playToken) { msg("Could not load the recitation. Check your internet connection.", true); stopPlaying(); } return; }
+  if (token !== playToken) return;
+  const rate = +$("speedSel").value, src = actx.createBufferSource();
+  src.buffer = b.buffer; src.playbackRate.value = rate; src.connect(actx.destination);
+  const when = Math.max(actx.currentTime + 0.03, nextStart);
+  src.start(when, b.off, b.dur);
+  nextStart = when + b.dur / rate;
+  sources.push(src); if (sources.length > 4) sources.shift();
+  const startsIn = Math.max(0, (when - actx.currentTime) * 1000);
+  setTimeout(() => { if (token === playToken) showPlaying(it); }, startsIn);
+  const nx = nextItem(it);
+  if (!nx) { setTimeout(() => { if (token === playToken) { stopPlaying(); msg("✅ Finished listening."); } }, (nextStart - actx.currentTime) * 1000); return; }
+  getBuf(audioUrl(nx.g, nx.bism)).catch(() => {});          // start downloading the next ayah now
+  setTimeout(() => { if (token === playToken) schedule(nx, token); }, startsIn);   // queue it once this one starts
+}
+function showPlaying(it) {
+  const g = it.g, ay = ayahs[g];
+  showPage(pageOfAyah[g]); setPlayG(g);
+  if (+$("surah").value !== ay.s) { $("surah").value = ay.s; fillAyahSelect(); }
+  $("fromAyah").value = ay.a; syncGoto(g);
+  const reps = repeatCount();
+  $("playInfo").textContent = (it.bism ? "بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ ٱلرَّحِيمِ" : `▶ ${QURAN[ay.s].t} ${ay.s + 1}:${ay.a + 1}`)
+    + (reps === Infinity ? " · repeating this ayah ∞" : reps > 1 && !it.bism ? ` · ${reps - it.rep + 1}/${reps}` : "")
+    + ($("loopSel").value === "1" ? ` · loop round ${it.round}` : "");
+  const el = words[ay.w0].el; if (el) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+function startPlaying(fromG) {
   stopListening();                       // don't let the microphone hear the recitation
-  const g = words[Math.min(ptr, words.length - 1)].g;
-  playing = true; repLeft = repeatCount(); loopRound = 1;
+  actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+  actx.resume();
+  const g = fromG != null ? fromG : words[Math.min(ptr, words.length - 1)].g;
+  playing = true; const token = ++playToken; nextStart = 0;
   $("playLabel").textContent = "Pause"; $("playBtn").classList.add("on");
   $("playBtn").querySelector("svg").innerHTML = '<path d="M7 4h4v16H7zM13 4h4v16h-4z"/>';
-  const ay = ayahs[g];
-  playAyah(g, ay.a === 0 && ay.s !== 0 && ay.s !== 8);
+  $("playInfo").textContent = "Loading…";
+  schedule(firstItem(g), token);
 }
 function stopPlaying() {
   if (!playing && playG < 0) return;
-  playing = false; player.pause();
+  playing = false; playToken++;
+  for (const src of sources) { try { src.stop(); } catch {} }
+  sources = [];
   $("playLabel").textContent = "Listen"; $("playBtn").classList.remove("on");
   $("playBtn").querySelector("svg").innerHTML = '<path d="M7 4v16l13-8z"/>';
   const g = playG; setPlayG(-1);
   $("playInfo").textContent = "";
   if (g >= 0 && ayahs[g]) setStart(ayahs[g].w0);     // reciting continues from where the audio stopped
 }
+function restartPlaying() { if (playing) { const g = playG >= 0 ? playG : undefined; stopPlaying(); startPlaying(g); } }
 
 /* ---------- Session state ---------- */
 let ptr = 0, startPtr = 0, stats, mistakes, freeHeard = 0, pending = [], touched = new Set();
@@ -921,8 +949,8 @@ function bind() {
   $("pageSel").onchange = () => jumpToAyah(META.pages[+$("pageSel").value - 1] - 1);
   $("reciterSel").innerHTML = RECITERS.map(([id, n]) => `<option value="${id}">${n}</option>`).join("");
   $("reciterSel").value = settings.reciter || RECITERS[0][0];
-  $("reciterSel").onchange = e => { settings.reciter = e.target.value; saveSettings(); if (playing) playAyah(playG, false); };
-  $("speedSel").onchange = () => { player.playbackRate = +$("speedSel").value; };
+  $("reciterSel").onchange = e => { settings.reciter = e.target.value; saveSettings(); restartPlaying(); };
+  $("speedSel").onchange = restartPlaying;
   $("playBtn").onclick = () => playing ? stopPlaying() : startPlaying();
   $("mistakeList").onclick = e => { const b = e.target.closest(".mitem"); if (b) revealWord(+b.dataset.i); };
   $("book").onclick = e => { const i = e.target.dataset && e.target.dataset.i; if (i != null) { stopListening(); setStart(+i); } };
