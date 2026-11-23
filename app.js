@@ -531,7 +531,7 @@ function onFrame(f) {
   if (!inSpeech) {
     noise = noise * 0.95 + rms * 0.05;
     preroll.push(f); if (preroll.length > 2) preroll.shift();
-    if (speaking) { inSpeech = true; silenceMs = 0; buf = preroll.slice(); bufLen = buf.reduce((n, x) => n + x.length, 0); preroll = []; diag("speech"); msg("👂 Hearing you…"); }
+    if (speaking) { inSpeech = true; silenceMs = 0; chunkLo = ptr; buf = preroll.slice(); bufLen = buf.reduce((n, x) => n + x.length, 0); preroll = []; diag("speech"); msg("👂 Hearing you…"); }
     return;
   }
   buf.push(f); bufLen += f.length;
@@ -548,7 +548,7 @@ function flushChunk() {
   const audio = new Float32Array(bufLen); let o = 0;
   for (const x of buf) { audio.set(x, o); o += x.length; }
   buf = []; bufLen = 0; inSpeech = silenceMs < 450;
-  if (localMode === "server") { sendToServer(audio); return; }
+  if (localMode === "server") { sendToServer(audio, chunkLo); chunkLo = ptr; return; }
   if (busy) {   // still working on the previous phrase: join this one onto the waiting phrase
     if (queued) { const j = new Float32Array(queued.length + audio.length); j.set(queued); j.set(audio, queued.length); queued = j; }
     else queued = audio;
@@ -589,7 +589,7 @@ function proText(m) {
   if (!m.expect) return `${rule}extra sound <span class="ar bad">${esc(m.heard)}</span>`;
   return `${rule}heard <span class="ar bad">${esc(m.heard)}</span> <span class="arrow">→</span> should be <span class="ar ok">${esc(m.expect)}</span>`;
 }
-let serverChain = Promise.resolve(), serverPending = 0;
+let serverChain = Promise.resolve(), serverPending = 0, chunkLo = 0;
 const serverUrl = () => (settings.server || "").trim().replace(/\/+$/, "");
 
 function wavBytes(samples) {
@@ -602,18 +602,21 @@ function wavBytes(samples) {
   return new Blob([buf], { type: "audio/wav" });
 }
 
-function sendToServer(audio) {
-  const url = serverUrl(); if (!url) return;
+function sendToServer(audio, lo) {
+  const url = serverUrl(); if (!url || !words[lo]) return;
   serverPending++; diag(`checking-harakat(${serverPending})`);
+  // Tell the server which ayat this phrase covers (Google's word tracking knows where you are).
+  const a = words[Math.max(0, lo - 1)], b = words[Math.min(words.length - 1, ptr + 2)];
   const fd = new FormData(); fd.append("file", wavBytes(audio), "phrase.wav");
+  if (a.s === b.s) { fd.append("sura", a.s + 1); fd.append("aya_from", a.a + 1); fd.append("aya_to", Math.min(b.a + 1, a.a + 4)); }
   serverChain = serverChain.then(() => fetch(url + "/check", { method: "POST", body: fd })
-    .then(r => r.json()).then(res => { applyServerResult(res); diag(res.found ? `harakat-done(${res.seconds}s)` : "harakat-no-match"); })
+    .then(r => r.json()).then(res => { applyServerResult(res, Math.max(0, lo - 2)); diag(res.found ? `harakat-done(${res.seconds}s)` : "harakat-no-match"); })
     .catch(() => { diag("server-error"); msg("Could not reach your harakat server. It may be waking up (1–2 min) — check Settings.", true); })
     .finally(() => { serverPending--; }));
 }
 
 // Map the server's matched text onto our word list, then attach each error to its word.
-function applyServerResult(res) {
+function applyServerResult(res, lo = 0) {
   if (!res || !res.found || !res.errors) return;
   const sw = res.uthmani_text.split(/\s+/).filter(Boolean), st = res.start;
   let best = null;
@@ -621,6 +624,7 @@ function applyServerResult(res) {
     const g = ayahIndex(st.sura_idx - 1, Math.max(0, st.aya_idx + aOff));
     if (!ayahs[g]) continue;
     let j = Math.max(0, ayahs[g].w0 + st.uthmani_word_idx - 2), hits = 0;
+    if (res.from_hint && aOff !== -1) continue;               // hint ayah numbers are 1-based
     const map = sw.map(w => {
       const k = key(w); if (!k) return null;
       for (let x = j; x < Math.min(words.length, j + 4); x++) if (same(words[x].key, k)) { j = x + 1; hits++; return x; }
@@ -629,8 +633,18 @@ function applyServerResult(res) {
     if (!best || hits > best.hits) best = { map, hits };
   }
   if (!best || best.hits < sw.length / 2) { diag("harakat-unmapped"); return; }
-  for (const e of res.errors) {
-    const i = best.map[e.word_offset]; if (i == null) continue;
+  // Words where every reported problem is "missing" were simply not in this recording — skip them.
+  // "Missing letter" alone is mostly noise (Google already checks whole words), so keep only
+  // harakat, tajweed and wrong-letter reports.
+  const byWord = new Map();
+  for (const e of res.errors) { if (!byWord.has(e.word_offset)) byWord.set(e.word_offset, []); byWord.get(e.word_offset).push(e); }
+  const keep = res.errors.filter(e => {
+    if (byWord.get(e.word_offset).every(x => x.speech === "delete" || !x.heard)) return false;
+    if (e.type === "normal" && (e.speech === "delete" || !e.heard)) return false;
+    return true;
+  });
+  for (const e of keep) {
+    const i = best.map[e.word_offset]; if (i == null || i < lo || i >= ptr) continue;   // only words recited in this phrase
     const type = SERVER_TYPE[e.type] || "letter", w = words[i];
     if (w.state === "bad" || w.state === "skip") continue;      // already reported as a word mistake
     const rule = e.rules && e.rules[0] ? e.rules[0].ar : "";

@@ -10,6 +10,10 @@ pinned: false
 
 # Tilawa Checker — recitation correction server
 
+**Free way to run it:** open `tilawa_colab.ipynb` in Google Colab (free GPU) and press *Run all*; it prints a
+`https://….trycloudflare.com` address to paste into the app (Settings → Harakat & tajweed check).
+The Dockerfile is for Hugging Face Docker Spaces (now a paid feature) or any Docker host.
+
 Backend for the free Tilawa Checker web app. It runs the open
 [Quran Muaalem](https://github.com/obadx/quran-muaalem) model
 ([obadx/muaalem-model-v3_2](https://huggingface.co/obadx/muaalem-model-v3_2)) to detect
