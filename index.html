@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Amiri+Quran&family=Amiri:wght@400;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=15">
+<link rel="stylesheet" href="style.css?v=16">
 </head>
 <body>
 <header class="top">
@@ -31,6 +31,11 @@
       <div class="pick">
         <label><span>Surah</span><select id="surah"></select></label>
         <label class="ayah-pick"><span>Ayah</span><select id="fromAyah"></select></label>
+        <div class="pick-row">
+          <label><span>Juz</span><select id="juzSel"></select></label>
+          <label><span>Hizb</span><select id="hizbSel"></select></label>
+          <label><span>Page</span><select id="pageSel"></select></label>
+        </div>
       </div>
       <div class="stats">
         <div class="stat"><b id="sOk">0</b><span>Correct</span></div>
@@ -47,6 +52,15 @@
         <div id="heard" class="heard" dir="rtl" lang="ar"></div>
       </div>
       <div id="diag" class="diag"></div>
+    </div>
+
+    <div class="listen" id="listenBar">
+      <button id="playBtn" class="play" aria-label="Listen"><svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg><span id="playLabel">Listen</span></button>
+      <label><span>Reciter</span><select id="reciterSel"></select></label>
+      <label class="small-sel"><span>Repeat ayah</span><select id="repeatSel"><option value="1">1×</option><option value="2">2×</option><option value="3">3×</option><option value="5">5×</option><option value="10">10×</option></select></label>
+      <label class="small-sel"><span>Speed</span><select id="speedSel"><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select></label>
+      <label class="small-sel"><span>Stop at end of</span><select id="stopSel"><option value="ayah">Ayah</option><option value="page">Page</option><option value="surah" selected>Surah</option><option value="juz">Juz</option><option value="none">Don't stop</option></select></label>
+      <div id="playInfo" class="play-info"></div>
     </div>
 
     <div class="book-wrap">
@@ -142,7 +156,7 @@
       <h3>How it works</h3>
       <p>Choose a surah, press the microphone and recite. Each word turns <span class="ok">green</span> when it is correct, <span class="bad">red</span> when it is wrong and <span class="skip">orange</span> when you skip it. You can go back and repeat earlier ayat at any time; that is not counted as a mistake. Tap any word to start from there.</p>
       <p>Speech is recognised by your browser's built-in speech service, so you need <b>Google Chrome</b>, Microsoft Edge or Safari, and an internet connection. In Brave, Firefox and other browsers without that service, the app automatically uses an <b>on-device Quran speech model</b> instead (a Whisper model trained on recitation by Tarteel AI). It downloads about 100&nbsp;MB once, runs entirely on your device, and checks each phrase when you pause. The app checks <b>words</b>; it cannot judge tajweed, and it may sometimes mishear a word.</p>
-      <p class="muted">Quran text: Uthmani script from The Noble Qur'an Encyclopedia (quranenc.com); translation Saheeh International, via the open <i>quran-json</i> dataset (CC BY-SA 4.0). Page layout of the Madani mushaf via <i>quran-meta</i> (MIT). The harakat &amp; tajweed check uses the open <a href="https://github.com/obadx/quran-muaalem">Quran Muaalem</a> model.</p>
+      <p class="muted">Quran text: Uthmani script from The Noble Qur'an Encyclopedia (quranenc.com); translation Saheeh International, via the open <i>quran-json</i> dataset (CC BY-SA 4.0). Page layout of the Madani mushaf via <i>quran-meta</i> (MIT). Recitations from <a href="https://everyayah.com">EveryAyah.com</a>. The harakat &amp; tajweed check uses the open <a href="https://github.com/obadx/quran-muaalem">Quran Muaalem</a> model.</p>
       <p><b>AI notice:</b> the speech recognition and the harakat &amp; tajweed check are AI and may make mistakes. This app is an aid only and is not a substitute for a proficient, authorised Quran teacher — the Quran is received through oral transmission (mushafahah).</p>
     </div>
   </section>
@@ -156,6 +170,6 @@
   </div>
 </div>
 
-<script src="app.js?v=15"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>

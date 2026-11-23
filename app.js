@@ -136,6 +136,102 @@ function showPage(p) {
 }
 const turn = dir => showPage(dir > 0 ? shownPages[shownPages.length - 1] + 1 : shownPages[0] - 1);
 
+/* ---------- Go to juz / hizb / page ---------- */
+const hizbOf = g => { const q = META.hizbQ; let i = 0; while (i + 1 < q.length - 1 && q[i + 1] - 1 <= g) i++; return i; }; // quarter index 0..239
+function fillGoto() {
+  $("juzSel").innerHTML = Array.from({ length: 30 }, (_, i) => `<option value="${i}">${i + 1}</option>`).join("");
+  const frac = ["", " ¼", " ½", " ¾"];
+  $("hizbSel").innerHTML = Array.from({ length: 240 }, (_, i) => `<option value="${i}">${Math.floor(i / 4) + 1}${frac[i % 4]}</option>`).join("");
+  $("pageSel").innerHTML = Array.from({ length: 604 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("");
+}
+function syncGoto(g) {
+  $("juzSel").value = juzOf(g) - 1; $("hizbSel").value = hizbOf(g); $("pageSel").value = pageOfAyah[g];
+}
+function jumpToAyah(g) { stopListening(); stopPlaying(); setStart(ayahs[g].w0); }
+
+/* ---------- Listen to a reciter (per-ayah audio from EveryAyah.com) ---------- */
+const RECITERS = [
+  ["Yasser_Ad-Dussary_128kbps", "Yasser Al-Dosari — ياسر الدوسري"],
+  ["Husary_128kbps", "Mahmoud Khalil Al-Husary — الحصري (Murattal)"],
+  ["Husary_Mujawwad_64kbps", "Al-Husary — الحصري (Mujawwad)"],
+  ["Husary_Muallim_128kbps", "Al-Husary — الحصري (المعلم، للتعليم)"],
+  ["Alafasy_128kbps", "Mishary Alafasy — مشاري العفاسي"],
+  ["Abdul_Basit_Murattal_192kbps", "Abdul Basit — عبد الباسط (Murattal)"],
+  ["Minshawy_Murattal_128kbps", "Al-Minshawi — المنشاوي (Murattal)"],
+  ["Abdurrahmaan_As-Sudais_192kbps", "Abdurrahman As-Sudais — السديس"],
+  ["Saood_ash-Shuraym_128kbps", "Saud Ash-Shuraim — الشريم"],
+  ["Maher_AlMuaiqly_64kbps", "Maher Al-Muaiqly — ماهر المعيقلي"],
+];
+let playG = -1, playing = false, repLeft = 0, bismillahFirst = false;
+const player = new Audio(), preloader = new Audio();
+player.preload = "auto"; preloader.preload = "auto";
+const pad3 = n => String(n).padStart(3, "0");
+const audioUrl = (g, bism) => {
+  const r = settings.reciter || RECITERS[0][0];
+  if (bism) return `https://everyayah.com/data/${r}/001001.mp3`;       // the basmala (Al-Fatihah 1:1)
+  const ay = ayahs[g]; return `https://everyayah.com/data/${r}/${pad3(ay.s + 1)}${pad3(ay.a + 1)}.mp3`;
+};
+function setPlayG(g) {
+  const old = playG; playG = g;
+  for (const x of [old, g]) if (x >= 0 && ayahs[x]) for (let i = ayahs[x].w0; i < ayahs[x].w1; i++) decorate(words[i]);
+}
+function playAyah(g, bism) {
+  if (g >= ayahs.length) { stopPlaying(); return; }
+  showPage(pageOfAyah[g]);
+  setPlayG(g);
+  const ay = ayahs[g];
+  if (+$("surah").value !== ay.s) { $("surah").value = ay.s; fillAyahSelect(); }
+  $("fromAyah").value = ay.a; syncGoto(g);
+  const reps = +$("repeatSel").value;
+  $("playInfo").textContent = bism ? "بِسۡمِ ٱللَّهِ ٱلرَّحۡمَٰنِ ٱلرَّحِيمِ" : `▶ ${QURAN[ay.s].t} ${ay.s + 1}:${ay.a + 1}` + (reps > 1 ? ` · ${reps - repLeft + 1}/${reps}` : "");
+  player.src = audioUrl(g, bism);
+  player.playbackRate = +$("speedSel").value;
+  player.play().catch(err => {
+    if (err && err.name === "AbortError") return;      // a newer ayah started loading — not an error
+    msg("Could not play the recitation. Check your internet connection.", true); stopPlaying();
+  });
+  if (!bism && g + 1 < ayahs.length) preloader.src = audioUrl(g + 1);
+  const el = words[ay.w0].el; if (el) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  bismillahFirst = bism;
+}
+function reachedStop(g, next) {
+  const stop = $("stopSel").value, a = ayahs[g], b = ayahs[next];
+  if (!b) return true;
+  if (stop === "ayah") return true;
+  if (stop === "page") return pageOfAyah[g] !== pageOfAyah[next];
+  if (stop === "surah") return a.s !== b.s;
+  if (stop === "juz") return juzOf(g) !== juzOf(next);
+  return false;
+}
+player.onended = () => {
+  if (!playing) return;
+  if (bismillahFirst) { playAyah(playG, false); return; }
+  if (--repLeft > 0) { playAyah(playG, false); return; }
+  const next = playG + 1;
+  if (reachedStop(playG, next)) { stopPlaying(); msg("✅ Finished listening."); return; }
+  repLeft = +$("repeatSel").value;
+  const b = ayahs[next];
+  playAyah(next, b.a === 0 && b.s !== 0 && b.s !== 8);       // basmala before each surah except Al-Fatihah and At-Tawbah
+};
+function startPlaying() {
+  stopListening();                       // don't let the microphone hear the recitation
+  const g = words[Math.min(ptr, words.length - 1)].g;
+  playing = true; repLeft = +$("repeatSel").value;
+  $("playLabel").textContent = "Pause"; $("playBtn").classList.add("on");
+  $("playBtn").querySelector("svg").innerHTML = '<path d="M7 4h4v16H7zM13 4h4v16h-4z"/>';
+  const ay = ayahs[g];
+  playAyah(g, ay.a === 0 && ay.s !== 0 && ay.s !== 8);
+}
+function stopPlaying() {
+  if (!playing && playG < 0) return;
+  playing = false; player.pause();
+  $("playLabel").textContent = "Listen"; $("playBtn").classList.remove("on");
+  $("playBtn").querySelector("svg").innerHTML = '<path d="M7 4v16l13-8z"/>';
+  const g = playG; setPlayG(-1);
+  $("playInfo").textContent = "";
+  if (g >= 0 && ayahs[g]) setStart(ayahs[g].w0);     // reciting continues from where the audio stopped
+}
+
 /* ---------- Session state ---------- */
 let ptr = 0, startPtr = 0, stats, mistakes, freeHeard = 0, pending = [], touched = new Set();
 function resetStats() { stats = { ok: 0, bad: 0, skip: 0 }; mistakes = []; freeHeard = 0; pending = []; }
@@ -166,6 +262,7 @@ function syncSelects() {
   const w = words[Math.min(ptr, words.length - 1)];
   if (+$("surah").value !== w.s) { $("surah").value = w.s; fillAyahSelect(); }
   $("fromAyah").value = w.a;
+  syncGoto(w.g);
 }
 
 function paint(scroll) {
@@ -202,7 +299,7 @@ function beep() {
 // Word appearance: colour by state, tooltip saying what went wrong.
 function decorate(w, pop) {
   const el = w.el; if (!el) return;
-  el.className = "w" + (w.state ? " " + w.state : "") + (w.state && w.state !== "ok" && settings.reveal ? " reveal" : "") + (pop ? " pop" : "");
+  el.className = "w" + (w.g === playG ? " playing" : "") + (w.state ? " " + w.state : "") + (w.state && w.state !== "ok" && settings.reveal ? " reveal" : "") + (pop ? " pop" : "");
   if (w.hk && w.state === "ok") el.classList.add("hk");
   el.title = w.hk && w.state === "ok" ? w.hk : w.state === "unsure" ? "Not heard clearly — not counted as a mistake" : w.state === "bad" ? `Mistake — heard: ${w.heard}` : w.state === "skip" ? "Skipped" : "";
 }
@@ -787,7 +884,7 @@ function fillAyahSelect() {
   const s = QURAN[+$("surah").value];
   $("fromAyah").innerHTML = s.v.map((_, i) => `<option value="${i}">${i + 1}</option>`).join("");
 }
-function jumpTo(s, a) { stopListening(); setStart(ayahs[ayahIndex(s, a)].w0); }
+function jumpTo(s, a) { stopListening(); stopPlaying(); setStart(ayahs[ayahIndex(s, a)].w0); }
 
 function bind() {
   document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
@@ -797,6 +894,14 @@ function bind() {
   });
   $("surah").onchange = () => { fillAyahSelect(); jumpTo(+$("surah").value, 0); };
   $("fromAyah").onchange = () => jumpTo(+$("surah").value, +$("fromAyah").value);
+  $("juzSel").onchange = () => jumpToAyah(META.juz[+$("juzSel").value] - 1);
+  $("hizbSel").onchange = () => jumpToAyah(META.hizbQ[+$("hizbSel").value] - 1);
+  $("pageSel").onchange = () => jumpToAyah(META.pages[+$("pageSel").value - 1] - 1);
+  $("reciterSel").innerHTML = RECITERS.map(([id, n]) => `<option value="${id}">${n}</option>`).join("");
+  $("reciterSel").value = settings.reciter || RECITERS[0][0];
+  $("reciterSel").onchange = e => { settings.reciter = e.target.value; saveSettings(); if (playing) playAyah(playG, false); };
+  $("speedSel").onchange = () => { player.playbackRate = +$("speedSel").value; };
+  $("playBtn").onclick = () => playing ? stopPlaying() : startPlaying();
   $("mistakeList").onclick = e => { const b = e.target.closest(".mitem"); if (b) revealWord(+b.dataset.i); };
   $("book").onclick = e => { const i = e.target.dataset && e.target.dataset.i; if (i != null) { stopListening(); setStart(+i); } };
   $("pgNext").onclick = () => turn(1);
@@ -813,7 +918,7 @@ function bind() {
   });
   let wide = isWide();
   window.addEventListener("resize", () => { if (isWide() !== wide) { wide = isWide(); const p = shownPages[0]; shownPages = []; showPage(p); } });
-  $("micBtn").onclick = () => listening ? stopListening() : startListening();
+  $("micBtn").onclick = () => { stopPlaying(); listening ? stopListening() : startListening(); };
   $("resetBtn").onclick = () => { stopListening(); setStart(startPtr); };
   $("memoBtn").onclick = () => { settings.memo = !settings.memo; saveSettings(); };
   $("sessions").onclick = e => { const b = e.target.closest("[data-report]"); if (b) showReport(store.get("history", [])[+b.dataset.report]); };
@@ -841,7 +946,7 @@ async function init() {
   try {
     [QURAN, META] = await Promise.all([fetch("data/quran.json").then(r => r.json()), fetch("data/meta.json").then(r => r.json())]);
   } catch { msg("Could not load the Quran text. Check your connection and reload.", true); return; }
-  buildModel(); fillSurahSelect();
+  buildModel(); fillSurahSelect(); fillGoto();
   const last = store.get("last", 0);
   $("surah").value = words[typeof last === "number" ? last : 0].s; fillAyahSelect();
   setStart(typeof last === "number" ? last : 0);

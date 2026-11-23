@@ -7,6 +7,9 @@ are counted through the session and saved to your history.
 ![screenshot](screenshot.png)
 
 ## Features
+- Listen to recitations by Yasser Al-Dosari, Mahmoud Khalil Al-Husary (murattal, mujawwad and teaching), Alafasy, Abdul Basit,
+  Al-Minshawi, As-Sudais, Ash-Shuraim and Al-Muaiqly (per-ayah audio from EveryAyah.com), with repeat, speed and stop-at options
+- Go to any surah, ayah, juz, hizb (with quarters) or page
 - Mushaf-style view: the 604 pages of the Madani mushaf, shown as a two-page spread on wide screens and one page on phones; pages turn automatically as you recite
 - All 114 surahs (Uthmani script) with optional English translation; recitation continues from one surah into the next
 - Start from any ayah, or tap any word to start from there
