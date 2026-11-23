@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Amiri+Quran&family=Amiri:wght@400;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=11">
+<link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
 <header class="top">
@@ -104,7 +104,12 @@
       <label class="switch"><input type="checkbox" id="optTrans"><span>Show translation of the current ayah</span></label>
       <label class="switch"><input type="checkbox" id="optSound"><span>Beep on mistake</span></label>
       <label class="switch"><input type="checkbox" id="optVibrate"><span>Vibrate on mistake</span></label>
-      <label class="switch"><input type="checkbox" id="optHarakat"><span><b>Harakat check (beta)</b> — a free Quran-trained AI on your device also listens and flags possible harakat mistakes (fatha, damma, kasra, tanween). Downloads about 105&nbsp;MB once. Best on a computer.</span></label>
+      <label class="switch"><input type="checkbox" id="optHarakat"><span><b>Harakat &amp; tajweed check (beta)</b> — sends each phrase you recite to <i>your own</i> free Quran Muaalem server (a Hugging Face Space) which checks harakat, tajweed and letters. Results appear a few seconds after each pause.</span></label>
+      <div class="server-row">
+        <input type="url" id="optServer" placeholder="https://your-name-tilawa-muaalem.hf.space" autocomplete="off" spellcheck="false">
+        <button id="testServer" class="btn-ghost" type="button">Test</button>
+      </div>
+      <p id="serverStatus" class="muted small"></p>
       <label class="switch"><input type="checkbox" id="optReveal"><span>In memorization mode, reveal words I get wrong</span></label>
       <label class="row"><span>Text size</span><input type="range" id="optFont" min="18" max="40" value="26"></label>
       <label class="row"><span>Strictness</span>
@@ -133,7 +138,8 @@
       <h3>How it works</h3>
       <p>Choose a surah, press the microphone and recite. Each word turns <span class="ok">green</span> when it is correct, <span class="bad">red</span> when it is wrong and <span class="skip">orange</span> when you skip it. You can go back and repeat earlier ayat at any time; that is not counted as a mistake. Tap any word to start from there.</p>
       <p>Speech is recognised by your browser's built-in speech service, so you need <b>Google Chrome</b>, Microsoft Edge or Safari, and an internet connection. In Brave, Firefox and other browsers without that service, the app automatically uses an <b>on-device Quran speech model</b> instead (a Whisper model trained on recitation by Tarteel AI). It downloads about 100&nbsp;MB once, runs entirely on your device, and checks each phrase when you pause. The app checks <b>words</b>; it cannot judge tajweed, and it may sometimes mishear a word.</p>
-      <p class="muted">Quran text: Uthmani script from The Noble Qur'an Encyclopedia (quranenc.com); translation Saheeh International, via the open <i>quran-json</i> dataset (CC BY-SA 4.0). Page layout of the Madani mushaf via <i>quran-meta</i> (MIT).</p>
+      <p class="muted">Quran text: Uthmani script from The Noble Qur'an Encyclopedia (quranenc.com); translation Saheeh International, via the open <i>quran-json</i> dataset (CC BY-SA 4.0). Page layout of the Madani mushaf via <i>quran-meta</i> (MIT). The harakat &amp; tajweed check uses the open <a href="https://github.com/obadx/quran-muaalem">Quran Muaalem</a> model.</p>
+      <p><b>AI notice:</b> the speech recognition and the harakat &amp; tajweed check are AI and may make mistakes. This app is an aid only and is not a substitute for a proficient, authorised Quran teacher — the Quran is received through oral transmission (mushafahah).</p>
     </div>
   </section>
 </main>
@@ -146,6 +152,6 @@
   </div>
 </div>
 
-<script src="app.js?v=11"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

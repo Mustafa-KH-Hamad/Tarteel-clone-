@@ -210,3 +210,11 @@ select{font:inherit;font-size:.95rem;padding:8px 10px;border-radius:10px;border:
 .mitem.harakat .tag,.ritem.harakat .tag{background:#8e44ad}
 .mitem.harakat>.ar{color:#8e44ad}
 .rw.harakat{color:#8e44ad;text-decoration:underline wavy #8e44ad 1px;text-underline-offset:8px}
+
+.server-row{display:flex;gap:8px;padding:4px 0 0 32px}
+.server-row input{flex:1;min-width:0;font:inherit;font-size:.9rem;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.server-row .btn-ghost{margin:0}
+.small{font-size:.82rem;padding-left:32px;margin:4px 0 8px}
+.mitem.tajweed .tag,.ritem.tajweed .tag{background:#2471a3}.mitem.letter .tag,.ritem.letter .tag{background:#7d3c98}
+.rw.tajweed{color:#2471a3;text-decoration:underline wavy #2471a3 1px;text-underline-offset:8px}
+.rw.letter{color:#7d3c98;text-decoration:underline wavy #7d3c98 1px;text-underline-offset:8px}

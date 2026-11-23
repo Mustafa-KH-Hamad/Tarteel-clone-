@@ -46,7 +46,7 @@ function same(expKey, heardKey) {
 }
 
 /* ---------- Settings ---------- */
-const settings = Object.assign({ trans: false, sound: true, vibrate: true, reveal: true, font: 26, strict: 1, memo: false, theme: "", engine: "auto", harakat: false },
+const settings = Object.assign({ trans: false, sound: true, vibrate: true, reveal: true, font: 26, strict: 1, memo: false, theme: "", engine: "auto", harakat: false, server: "" },
   store.get("settings", {}));
 function saveSettings() { store.set("settings", settings); applySettings(); }
 function applySettings() {
@@ -58,7 +58,7 @@ function applySettings() {
   $("transPanel").style.display = settings.trans ? "" : "none";
   $("optTrans").checked = settings.trans; $("optSound").checked = settings.sound;
   $("optVibrate").checked = settings.vibrate; $("optReveal").checked = settings.reveal;
-  $("optFont").value = settings.font; $("optStrict").value = settings.strict; $("optTheme").value = settings.theme; $("optEngine").value = settings.engine; $("optHarakat").checked = settings.harakat;
+  $("optFont").value = settings.font; $("optStrict").value = settings.strict; $("optTheme").value = settings.theme; $("optEngine").value = settings.engine; $("optHarakat").checked = settings.harakat; $("optServer").value = settings.server || "";
   showTranslation();
 }
 
@@ -144,7 +144,7 @@ function setStart(i) {
   const gs = new Set();
   touched.forEach(j => { const w = words[j]; w.state = ""; w.heard = ""; w.hk = ""; decorate(w); gs.add(w.g); });
   touched.clear(); resetStats(); gs.forEach(ayahBadge); renderMistakes();
-  ptr = startPtr = Math.max(0, Math.min(i, words.length - 1)); harakatPtr = ptr;
+  ptr = startPtr = Math.max(0, Math.min(i, words.length - 1));
   $("heard").textContent = "";
   store.set("last", ptr);
   paint(true);
@@ -204,7 +204,7 @@ function decorate(w, pop) {
   const el = w.el; if (!el) return;
   el.className = "w" + (w.state ? " " + w.state : "") + (w.state && w.state !== "ok" && settings.reveal ? " reveal" : "") + (pop ? " pop" : "");
   if (w.hk && w.state === "ok") el.classList.add("hk");
-  el.title = w.hk && w.state === "ok" ? `Possible harakat mistake — heard: ${w.hk}` : w.state === "unsure" ? "Not heard clearly — not counted as a mistake" : w.state === "bad" ? `Mistake — heard: ${w.heard}` : w.state === "skip" ? "Skipped" : "";
+  el.title = w.hk && w.state === "ok" ? w.hk : w.state === "unsure" ? "Not heard clearly — not counted as a mistake" : w.state === "bad" ? `Mistake — heard: ${w.heard}` : w.state === "skip" ? "Skipped" : "";
 }
 // Ayah-end marker turns red and shows how many mistakes that ayah has.
 function ayahBadge(g) {
@@ -243,10 +243,10 @@ function renderMistakes() {
     const [sn, an] = k.split(":");
     return `<li class="mgroup"><div class="mhead"><b>${QURAN[sn - 1].t} ${k}</b><span class="badge">${list.length}</span></div>
       ${list.map(m => {
-        const fixed = words[m.i].state === "ok";
+        const fixed = !PRO.has(m.type) && words[m.i].state === "ok";
         return `<button class="mitem ${m.type}${fixed ? " fixed" : ""}" data-i="${m.i}">
-          <span class="tag">${m.type === "bad" ? "Mistake" : m.type === "harakat" ? "Harakat?" : "Skipped"}</span>
-          <span class="ar">${m.word}</span>${m.type !== "skip" ? `<span class="heard-as">heard <span class="ar">${m.heard}</span></span>` : ""}
+          <span class="tag">${TAGS[m.type] || m.type}</span>
+          <span class="ar">${m.word}</span>${m.type === "bad" ? `<span class="heard-as">heard <span class="ar">${esc(m.heard)}</span></span>` : PRO.has(m.type) ? `<span class="heard-as">${proText(m)}</span>` : ""}
           ${fixed ? `<span class="fixed-tag">✓ corrected</span>` : ""}</button>`;
       }).join("")}</li>`;
   }).join("");
@@ -427,7 +427,7 @@ function startListening() {
   listening = true;
   setMicUI(true);
   msg("Starting microphone…");
-  if (settings.harakat) { harakatPtr = Math.max(startPtr, ptr - 5); startLocal("harakat"); }
+  if (settings.harakat && serverUrl()) startLocal("server");
 }
 
 function stopListening(finished) {
@@ -472,8 +472,7 @@ function getWorker() {
       if (m.error) diag("model-failed");
       const text = cleanModelText(m.text);
       if (text && listening) {
-        if (localMode === "harakat") checkHarakat(text);
-        else { $("heard").textContent = text; feed(text); }
+        $("heard").textContent = text; feed(text);
       }
       if (queued) { const q = queued; queued = null; sendChunk(q); }
     }
@@ -492,6 +491,7 @@ function startLocal(mode) {
   localMode = mode || "words";
   listening = true; setMicUI(true);
   if (localMode === "words") { trail = []; diag("on-device"); }
+  if (localMode === "server") { openMic(); return; }
   getWorker();
   if (workerReady) { openMic(); return; }
   pendingStart = true;
@@ -520,7 +520,7 @@ async function openMic() {
   };
   src.connect(proc); proc.connect(audioCtx2.destination);
   buf = []; bufLen = 0; preroll = []; inSpeech = false; silenceMs = 0;
-  diag(localMode === "harakat" ? "harakat-on" : "mic-on");
+  diag(localMode === "server" ? "harakat-recording" : "mic-on");
   if (localMode === "words") msg("🎤 Listening (on-device) — recite, and pause briefly between phrases.");
 }
 
@@ -538,7 +538,8 @@ function onFrame(f) {
   silenceMs = speaking ? 0 : silenceMs + ms;
   const secs = bufLen / RATE;
   // Send a phrase at a pause (or every 7 s during long continuous recitation).
-  if ((silenceMs >= 450 && secs >= 0.8) || secs >= 7) flushChunk();
+  const minS = localMode === "server" ? 1.5 : 0.8, maxS = localMode === "server" ? 13 : 7;
+  if ((silenceMs >= 450 && secs >= minS) || secs >= maxS) flushChunk();
   else if (silenceMs >= 1500) { inSpeech = false; buf = []; bufLen = 0; }
 }
 
@@ -547,6 +548,7 @@ function flushChunk() {
   const audio = new Float32Array(bufLen); let o = 0;
   for (const x of buf) { audio.set(x, o); o += x.length; }
   buf = []; bufLen = 0; inSpeech = silenceMs < 450;
+  if (localMode === "server") { sendToServer(audio); return; }
   if (busy) {   // still working on the previous phrase: join this one onto the waiting phrase
     if (queued) { const j = new Float32Array(queued.length + audio.length); j.set(queued); j.set(audio, queued.length); queued = j; }
     else queued = audio;
@@ -573,69 +575,88 @@ function stopLocal() {
   if (mic) { mic.getTracks().forEach(t => t.stop()); mic = null; }
 }
 
-/* ---------- Harakat check (beta) ---------- */
-// Google's engine returns words without harakat. When the harakat check is on, the Quran-trained model
-// also listens and writes what it hears WITH harakat. For words already confirmed correct, we compare
-// the short vowels (fatha/damma/kasra, tanween, shadda) letter by letter. Because the model can mishear,
-// these are shown as "possible" harakat mistakes and are not counted in the score.
-let harakatPtr = 0;
-const VOWEL = { "\u064E": "a", "\u064F": "u", "\u0650": "i", "\u064B": "an", "\u064C": "un", "\u064D": "in" };
-const LETTER = /[\u0621-\u063A\u0641-\u064A\u0671]/;
-function vowelTokens(word) {
-  const out = []; let last = null;
-  for (const c of word) {
-    if (LETTER.test(c)) { last = { l: c.replace(/[أإآٱ]/, "ا").replace("ؤ", "و").replace("ئ", "ي").replace("ى", "ي").replace("ة", "ه"), v: "", sh: false }; out.push(last); }
-    else if (last && VOWEL[c]) last.v = VOWEL[c];
-    else if (last && c === "\u0651") last.sh = true;
-  }
-  return out.filter(t => t.v);
+/* ---------- Harakat & tajweed check via your Muaalem server (beta) ---------- */
+// Google's engine only gives words. When this check is on, the app also records each phrase (cut at
+// your pauses, max 13 s) and sends it to YOUR free Hugging Face Space running the open Quran Muaalem
+// model. That model writes down the sounds you actually made (with harakat) and compares them with
+// the correct recitation, returning harakat (tashkeel), tajweed and letter errors per word.
+const TAGS = { bad: "Mistake", skip: "Skipped", harakat: "Harakat", tajweed: "Tajweed", letter: "Letter" };
+const PRO = new Set(["harakat", "tajweed", "letter"]);
+const SERVER_TYPE = { tashkeel: "harakat", tajweed: "tajweed", normal: "letter" };
+function proText(m) {
+  const rule = m.rule ? `${esc(m.rule)} — ` : "";
+  if (!m.heard) return `${rule}missing <span class="ar ok">${esc(m.expect)}</span>`;
+  if (!m.expect) return `${rule}extra sound <span class="ar bad">${esc(m.heard)}</span>`;
+  return `${rule}heard <span class="ar bad">${esc(m.heard)}</span> <span class="arrow">→</span> should be <span class="ar ok">${esc(m.expect)}</span>`;
 }
-// Returns a list of letters whose vowel differs, or null if the model's word has too few harakat to judge.
-function harakatDiff(expected, heard, ignoreLast) {
-  const a = vowelTokens(expected), b = vowelTokens(heard);
-  if (b.length < Math.max(1, a.length * 0.6)) return null;
-  const n = a.length, m = b.length, dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
-  for (let i = 1; i <= n; i++) for (let j = 1; j <= m; j++)
-    dp[i][j] = a[i - 1].l === b[j - 1].l ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
-  const diffs = [];
-  for (let i = n, j = m; i > 0 && j > 0;) {
-    if (a[i - 1].l === b[j - 1].l) {
-      const lastLetter = i === n;
-      const va = a[i - 1].v.replace("n", ""), vb = b[j - 1].v.replace("n", "");
-      if (va !== vb && !(lastLetter && ignoreLast)) diffs.push(a[i - 1].l);
-      i--; j--;
-    } else if (dp[i - 1][j] >= dp[i][j - 1]) i--; else j--;
-  }
-  return diffs;
+let serverChain = Promise.resolve(), serverPending = 0;
+const serverUrl = () => (settings.server || "").trim().replace(/\/+$/, "");
+
+function wavBytes(samples) {
+  const buf = new ArrayBuffer(44 + samples.length * 2), v = new DataView(buf);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, "RIFF"); v.setUint32(4, 36 + samples.length * 2, true); w(8, "WAVE"); w(12, "fmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, RATE, true);
+  v.setUint32(28, RATE * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, samples.length * 2, true);
+  for (let i = 0; i < samples.length; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, samples[i])) * 0x7fff, true);
+  return new Blob([buf], { type: "audio/wav" });
 }
-function checkHarakat(text) {
-  const hw = text.split(/\s+/).filter(Boolean);
-  let j = Math.max(harakatPtr, startPtr), found = 0;
-  hw.forEach((h, n) => {
-    const k = key(h);
-    for (let idx = j; idx < Math.min(words.length, j + 8); idx++) {
-      if (!same(words[idx].key, k)) continue;
-      j = idx + 1; found++;
-      const w = words[idx];
-      if (w.state !== "ok" || w.hk) return;
-      const diffs = harakatDiff(w.text, h, n === hw.length - 1);   // last word before a pause may be read with sukun (waqf)
-      if (diffs && diffs.length) {
-        w.hk = h;
-        mistakes.push({ type: "harakat", i: idx, word: w.text, key: w.key, heard: h, s: w.s + 1, ayah: w.a + 1 });
-        decorate(w); renderMistakes();
-      }
-      return;
-    }
-  });
-  if (found) harakatPtr = j;
-  diag("harakat-checked");
+
+function sendToServer(audio) {
+  const url = serverUrl(); if (!url) return;
+  serverPending++; diag(`checking-harakat(${serverPending})`);
+  const fd = new FormData(); fd.append("file", wavBytes(audio), "phrase.wav");
+  serverChain = serverChain.then(() => fetch(url + "/check", { method: "POST", body: fd })
+    .then(r => r.json()).then(res => { applyServerResult(res); diag(res.found ? `harakat-done(${res.seconds}s)` : "harakat-no-match"); })
+    .catch(() => { diag("server-error"); msg("Could not reach your harakat server. It may be waking up (1–2 min) — check Settings.", true); })
+    .finally(() => { serverPending--; }));
+}
+
+// Map the server's matched text onto our word list, then attach each error to its word.
+function applyServerResult(res) {
+  if (!res || !res.found || !res.errors) return;
+  const sw = res.uthmani_text.split(/\s+/).filter(Boolean), st = res.start;
+  let best = null;
+  for (const aOff of [-1, 0]) {                              // aya index may be 0- or 1-based
+    const g = ayahIndex(st.sura_idx - 1, Math.max(0, st.aya_idx + aOff));
+    if (!ayahs[g]) continue;
+    let j = Math.max(0, ayahs[g].w0 + st.uthmani_word_idx - 2), hits = 0;
+    const map = sw.map(w => {
+      const k = key(w); if (!k) return null;
+      for (let x = j; x < Math.min(words.length, j + 4); x++) if (same(words[x].key, k)) { j = x + 1; hits++; return x; }
+      return null;
+    });
+    if (!best || hits > best.hits) best = { map, hits };
+  }
+  if (!best || best.hits < sw.length / 2) { diag("harakat-unmapped"); return; }
+  for (const e of res.errors) {
+    const i = best.map[e.word_offset]; if (i == null) continue;
+    const type = SERVER_TYPE[e.type] || "letter", w = words[i];
+    if (w.state === "bad" || w.state === "skip") continue;      // already reported as a word mistake
+    const rule = e.rules && e.rules[0] ? e.rules[0].ar : "";
+    if (mistakes.some(m => m.i === i && m.type === type && m.expect === e.expected)) continue;
+    mistakes.push({ type, i, word: w.text, key: w.key, heard: e.heard, expect: e.expected, rule, s: w.s + 1, ayah: w.a + 1 });
+    w.hk = TAGS[type] + (rule ? `: ${rule}` : "") + (e.heard || e.expected ? ` — heard ${e.heard || "nothing"}, should be ${e.expected || "nothing"}` : "");
+    touched.add(i); decorate(w);
+  }
+  renderMistakes();
+}
+
+async function testServer() {
+  const url = serverUrl();
+  if (!url) { $("serverStatus").textContent = "Paste your Space address first."; return; }
+  $("serverStatus").textContent = "Connecting… (a sleeping Space takes 1–2 minutes to wake up)";
+  try {
+    const r = await fetch(url + "/health"); const j = await r.json();
+    $("serverStatus").textContent = j.ok ? "✅ Connected. The harakat & tajweed check will be used when you recite." : "Unexpected answer from the server.";
+  } catch { $("serverStatus").textContent = "❌ Could not connect. Check the address (it ends with .hf.space) and that the Space is running."; }
 }
 
 /* ---------- History ---------- */
 function currentSession() {
   const a = words[startPtr], b = words[Math.max(startPtr, Math.min(ptr, words.length) - 1)];
   const ref = w => `${QURAN[w.s].t} ${w.s + 1}:${w.a + 1}`;
-  const ms = mistakes.map(m => ({ ...m, fixed: words[m.i].state === "ok" }));
+  const ms = mistakes.map(m => ({ ...m, fixed: !PRO.has(m.type) && words[m.i].state === "ok" }));
   return { date: Date.now(), from: ref(a), to: ref(b), surah: a.s + 1, name: QURAN[a.s].t, ...stats, mistakes: ms };
 }
 function saveSession(finished) {
@@ -693,16 +714,16 @@ function buildReport(list) {
     let text = "";
     for (let i = ay.w0; i < ay.w1; i++) {
       const m = wrong.get(i);
-      text += m ? `<span class="rw ${m.type}" title="${m.type === "bad" ? "You said: " + esc(m.heard) : "Skipped"}">${words[i].text}</span> ` : words[i].text + " ";
+      text += m ? `<span class="rw ${m.type}" title="${m.type === "bad" ? "You said: " + esc(m.heard) : m.type === "skip" ? "Skipped" : esc(TAGS[m.type])}">${words[i].text}</span> ` : words[i].text + " ";
     }
     text += `<span class="aya-end">${arNum(an)}</span>`;
     const items = ms.map(m => {
       const pos = m.i != null ? m.i - ay.w0 + 1 : null;
       const where = pos ? `Word ${pos}` : "";
-      const what = m.type !== "skip"
+      const what = PRO.has(m.type) ? `<span class="said">${proText(m)}</span>` : m.type === "bad"
         ? `<span class="said">You said <span class="ar bad">${esc(m.heard) || "—"}</span></span> <span class="arrow">→</span> <span class="said">Correct: <span class="ar ok">${m.word}</span></span>`
         : `<span class="said">You skipped</span> <span class="arrow">→</span> <span class="said">Correct: <span class="ar ok">${m.word}</span></span>`;
-      return `<li class="ritem ${m.type}"><span class="tag">${m.type === "bad" ? "Mistake" : m.type === "harakat" ? "Harakat?" : "Skipped"}</span>
+      return `<li class="ritem ${m.type}"><span class="tag">${TAGS[m.type] || m.type}</span>
         <span class="where">${where}</span>${what}${m.fixed ? ` <span class="fixed-tag">✓ corrected later</span>` : ""}</li>`;
     }).join("");
     return `<section class="rsec"><div class="rhead"><b>${QURAN[sn - 1].t} — ayah ${an}</b> <span class="muted">(${sn}:${an})</span>
@@ -772,6 +793,8 @@ function bind() {
   $("optFont").oninput = e => { settings.font = +e.target.value; saveSettings(); };
   $("optStrict").onchange = e => { settings.strict = +e.target.value; saveSettings(); };
   $("optTheme").onchange = e => { settings.theme = e.target.value; saveSettings(); };
+  $("optServer").onchange = e => { settings.server = e.target.value.trim(); saveSettings(); };
+  $("testServer").onclick = testServer;
   $("optHarakat").onchange = e => { stopListening(); settings.harakat = e.target.checked; saveSettings(); };
   $("optEngine").onchange = e => { stopListening(); settings.engine = e.target.value; saveSettings(); };
 }
