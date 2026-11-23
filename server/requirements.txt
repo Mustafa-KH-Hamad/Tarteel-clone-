@@ -1,6 +1,8 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.7.1
 quran-muaalem[engine]==0.3.0
+# quran-muaalem 0.3.0 needs transformers 4.x (5.x removed an internal it imports)
+transformers>=4.55,<4.58
 librosa>=0.11.0
 numba>=0.61.2
 fastapi>=0.116.1
