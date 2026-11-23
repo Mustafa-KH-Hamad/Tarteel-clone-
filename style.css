@@ -218,3 +218,6 @@ select{font:inherit;font-size:.95rem;padding:8px 10px;border-radius:10px;border:
 .mitem.tajweed .tag,.ritem.tajweed .tag{background:#2471a3}.mitem.letter .tag,.ritem.letter .tag{background:#7d3c98}
 .rw.tajweed{color:#2471a3;text-decoration:underline wavy #2471a3 1px;text-underline-offset:8px}
 .rw.letter{color:#7d3c98;text-decoration:underline wavy #7d3c98 1px;text-underline-offset:8px}
+.hlog{list-style:none;padding:0;margin:0;max-height:260px;overflow:auto;font-size:.85rem}
+.hlog li{padding:6px 0;border-top:1px dashed var(--line)}.hlog li:first-child{border-top:0}
+.hlog .ph{font-family:Amiri,serif;font-size:1.05rem;color:var(--muted);word-break:break-all}

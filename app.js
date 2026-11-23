@@ -427,7 +427,8 @@ function startListening() {
   listening = true;
   setMicUI(true);
   msg("Starting microphone…");
-  if (settings.harakat && serverUrl()) startLocal("server");
+  if (settings.harakat && serverUrl()) { startLocal("server"); hlog(0, "🎙 Harakat check is on — recording phrases for your server. Pause briefly after each ayah."); }
+  else if (settings.harakat) hlog(0, `<span class="bad">Harakat check is ticked but no server address is set (Settings).</span>`);
 }
 
 function stopListening(finished) {
@@ -602,22 +603,42 @@ function wavBytes(samples) {
   return new Blob([buf], { type: "audio/wav" });
 }
 
+// On-screen log of every phrase sent to the harakat server, so problems are visible.
+let hlogN = 0;
+function hlog(id, html) {
+  const box = $("hlog"); if (!box) return;
+  $("hlogPanel").style.display = "";
+  let row = document.getElementById("hl" + id);
+  if (!row) { row = document.createElement("li"); row.id = "hl" + id; box.prepend(row); }
+  row.innerHTML = html;
+}
+
 function sendToServer(audio, lo) {
   const url = serverUrl(); if (!url || !words[lo]) return;
+  const id = ++hlogN, secs = (audio.length / RATE).toFixed(1);
+  hlog(id, `<b>Phrase ${id}</b> (${secs}s) — sending…`);
   serverPending++; diag(`checking-harakat(${serverPending})`);
   // Tell the server which ayat this phrase covers (Google's word tracking knows where you are).
   const a = words[Math.max(0, lo - 1)], b = words[Math.min(words.length - 1, ptr + 2)];
   const fd = new FormData(); fd.append("file", wavBytes(audio), "phrase.wav");
   if (a.s === b.s) { fd.append("sura", a.s + 1); fd.append("aya_from", a.a + 1); fd.append("aya_to", Math.min(b.a + 1, a.a + 4)); }
   serverChain = serverChain.then(() => fetch(url + "/check", { method: "POST", body: fd })
-    .then(r => r.json()).then(res => { applyServerResult(res, Math.max(0, lo - 2)); diag(res.found ? `harakat-done(${res.seconds}s)` : "harakat-no-match"); })
-    .catch(() => { diag("server-error"); msg("Could not reach your harakat server. It may be waking up (1–2 min) — check Settings.", true); })
+    .then(r => r.json()).then(res => {
+      const shown = applyServerResult(res, Math.max(0, lo - 2));
+      diag(res.found ? `harakat-done(${res.seconds}s)` : "harakat-no-match");
+      hlog(id, `<b>Phrase ${id}</b> (${secs}s, ${res.seconds}s on server) — ` + (res.found
+        ? `matched <b>${res.start.sura_idx}:${res.start.aya_idx}</b>${res.from_hint ? " (by position)" : ""}; server found ${res.errors.length} issue(s), shown ${shown}.
+           <div class="ph">AI heard: <span dir="rtl">${esc(res.phonemes)}</span></div><div class="ph">Correct: <span dir="rtl">${esc(res.reference)}</span></div>`
+        : `<span class="bad">could not match this audio to the Quran</span>${res.error ? " — " + esc(res.error) : ""}<div class="ph">AI heard: <span dir="rtl">${esc(res.phonemes || "(nothing)")}</span></div>`));
+    })
+    .catch(err => { hlog(id, `<b>Phrase ${id}</b> — <span class="bad">server not reachable</span> (${esc(err.message)})`); diag("server-error"); msg("Could not reach your harakat server. It may be waking up (1–2 min) — check Settings.", true); })
     .finally(() => { serverPending--; }));
 }
 
 // Map the server's matched text onto our word list, then attach each error to its word.
 function applyServerResult(res, lo = 0) {
-  if (!res || !res.found || !res.errors) return;
+  if (!res || !res.found || !res.errors) return 0;
+  let shown = 0;
   const sw = res.uthmani_text.split(/\s+/).filter(Boolean), st = res.start;
   let best = null;
   for (const aOff of [-1, 0]) {                              // aya index may be 0- or 1-based
@@ -632,7 +653,7 @@ function applyServerResult(res, lo = 0) {
     });
     if (!best || hits > best.hits) best = { map, hits };
   }
-  if (!best || best.hits < sw.length / 2) { diag("harakat-unmapped"); return; }
+  if (!best || best.hits < sw.length / 2) { diag("harakat-unmapped"); return 0; }
   // Words where every reported problem is "missing" were simply not in this recording — skip them.
   // "Missing letter" alone is mostly noise (Google already checks whole words), so keep only
   // harakat, tajweed and wrong-letter reports.
@@ -651,9 +672,10 @@ function applyServerResult(res, lo = 0) {
     if (mistakes.some(m => m.i === i && m.type === type && m.expect === e.expected)) continue;
     mistakes.push({ type, i, word: w.text, key: w.key, heard: e.heard, expect: e.expected, rule, s: w.s + 1, ayah: w.a + 1 });
     w.hk = TAGS[type] + (rule ? `: ${rule}` : "") + (e.heard || e.expected ? ` — heard ${e.heard || "nothing"}, should be ${e.expected || "nothing"}` : "");
-    touched.add(i); decorate(w);
+    touched.add(i); decorate(w); shown++;
   }
   renderMistakes();
+  return shown;
 }
 
 async function testServer() {
