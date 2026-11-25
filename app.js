@@ -384,7 +384,8 @@ function startPlaying(fromG) {
   const g = fromG != null ? fromG : words[Math.min(ptr, words.length - 1)].g;
   playing = true; const token = ++playToken; nextStart = 0;
   $("playLabel").textContent = T("pause"); $("playBtn").classList.add("on");
-  $("playBtn").querySelector("svg").innerHTML = '<path d="M7 4h4v16H7zM13 4h4v16h-4z"/>';
+  for (const b of [$("playBtn"), $("dockPlay")]) b.querySelector("svg").innerHTML = '<path d="M7 4h4v16H7zM13 4h4v16h-4z"/>';
+  $("dockPlay").classList.add("on");
   $("playInfo").textContent = "Loading…";
   schedule(firstItem(g), token);
 }
@@ -394,7 +395,8 @@ function stopPlaying() {
   for (const src of sources) { try { src.stop(); } catch {} }
   sources = [];
   $("playLabel").textContent = T("listen"); $("playBtn").classList.remove("on");
-  $("playBtn").querySelector("svg").innerHTML = '<path d="M7 4v16l13-8z"/>';
+  for (const b of [$("playBtn"), $("dockPlay")]) b.querySelector("svg").innerHTML = '<path d="M7 4v16l13-8z"/>';
+  $("dockPlay").classList.remove("on");
   const g = playG; setPlayG(-1);
   $("playInfo").textContent = "";
   if (g >= 0 && ayahs[g]) setStart(ayahs[g].w0);     // reciting continues from where the audio stopped
@@ -1076,7 +1078,8 @@ function bind() {
   $("reciterSel").value = settings.reciter || RECITERS[0][0];
   $("reciterSel").onchange = e => { settings.reciter = e.target.value; saveSettings(); restartPlaying(); };
   $("speedSel").onchange = restartPlaying;
-  $("playBtn").onclick = () => playing ? stopPlaying() : startPlaying();
+  $("ctrlBtn").onclick = () => $("listenBar").scrollIntoView({ behavior: "smooth", block: "center" });
+  $("playBtn").onclick = $("dockPlay").onclick = () => playing ? stopPlaying() : startPlaying();
   $("mistakeList").onclick = e => { const b = e.target.closest(".mitem"); if (b) revealWord(+b.dataset.i); };
   $("book").onclick = e => { const i = e.target.dataset && e.target.dataset.i; if (i != null) { stopListening(); setStart(+i); } };
   $("pgNext").onclick = () => turn(1);

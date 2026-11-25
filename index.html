@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Amiri+Quran&family=Amiri:wght@400;700&family=Inter:wght@400;500;600;700&family=Noto+Naskh+Arabic:wght@400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=19">
+<link rel="stylesheet" href="style.css?v=20">
 </head>
 <body>
 <header class="top">
@@ -105,6 +105,7 @@
     </div>
 
     <div class="dock">
+      <button id="dockPlay" class="round play-round" title="Listen / Pause" aria-label="Listen / Pause"><svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg></button>
       <button id="memoBtn" class="round" title="Memorization mode (hide text)" aria-label="Memorization mode">
         <svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
       </button>
@@ -115,6 +116,7 @@
       <button id="reportBtn" class="round" title="Mistakes report" aria-label="Mistakes report">
         <svg viewBox="0 0 24 24"><path d="M9 4h6v3H9z"/><path d="M15 5h3v16H6V5h3"/><path d="M9 12h6M9 16h4"/></svg>
       </button>
+      <button id="ctrlBtn" class="round" title="Listening settings" aria-label="Listening settings"><svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></button>
       <button id="resetBtn" class="round" title="Restart session" aria-label="Restart session">
         <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
       </button>
@@ -203,6 +205,6 @@
   </div>
 </div>
 
-<script src="app.js?v=19"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>

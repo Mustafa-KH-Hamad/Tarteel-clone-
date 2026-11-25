@@ -263,3 +263,7 @@ html[dir="rtl"] .pick label span,html[dir="rtl"] .listen label span,html[dir="rt
 select{font-size:1rem;padding:9px 10px}
 .settings label{font-size:1rem;line-height:1.5}
 @media (max-width:560px){html{font-size:16px}.top{padding:8px 10px}.tabs button{padding:6px 10px}.lang-sel{padding:5px 6px}}
+.play-round{background:var(--gold);color:#fff;border-color:var(--gold)}
+.play-round svg{fill:currentColor;stroke:none}
+.play-round.on{background:var(--accent);border-color:var(--accent)}
+@media (max-width:560px){.dock .round{width:40px;height:40px}.dock{gap:5px}.mic{padding:0 12px}.mic span{display:none}.pg-nav{bottom:calc(84px + env(safe-area-inset-bottom))}}
