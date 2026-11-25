@@ -11,38 +11,33 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Amiri+Quran&family=Amiri:wght@400;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=18">
+<link href="https://fonts.googleapis.com/css2?family=Amiri+Quran&family=Amiri:wght@400;700&family=Inter:wght@400;500;600;700&family=Noto+Naskh+Arabic:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=19">
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span class="logo">۞</span><span>Tilawa<small>Checker</small></span></div>
+  <div class="brand"><span class="logo">۞</span><span><span data-t="appName">Tilawa</span><small data-t="appSub">Checker</small></span></div>
   <nav class="tabs" aria-label="Sections">
-    <button data-view="recite" class="active">Recite</button>
-    <button data-view="history">History</button>
-    <button data-view="settings">Settings</button>
+    <button data-view="recite" class="active" data-t="tabQuran">Quran</button>
+    <button data-view="history" data-t="tabHistory">History</button>
+    <button data-view="settings" data-t="tabSettings">Settings</button>
   </nav>
+  <select id="langSel" class="lang-sel" aria-label="Language">
+    <option value="en">English</option>
+    <option value="ar">العربية</option>
+    <option value="ckb">کوردی (سۆرانی)</option>
+  </select>
 </header>
 
 <main>
-  <!-- RECITE -->
+  <!-- QURAN (book first, controls underneath) -->
   <section id="view-recite" class="view active">
-    <div class="toolbar">
-      <div class="pick">
-        <label><span>Surah</span><select id="surah"></select></label>
-        <label class="ayah-pick"><span>Ayah</span><select id="fromAyah"></select></label>
-        <div class="pick-row">
-          <label><span>Juz</span><select id="juzSel"></select></label>
-          <label><span>Hizb</span><select id="hizbSel"></select></label>
-          <label><span>Page</span><select id="pageSel"></select></label>
-        </div>
-      </div>
-      <div class="stats">
-        <div class="stat"><b id="sOk">0</b><span>Correct</span></div>
-        <div class="stat bad"><b id="sBad">0</b><span>Mistakes</span></div>
-        <div class="stat skip"><b id="sSkip">0</b><span>Skipped</span></div>
-        <div class="stat"><b id="sPct">–</b><span>Accuracy</span></div>
-      </div>
+    <div class="where-bar" id="whereBar"></div>
+
+    <div class="book-wrap">
+      <button class="pg-nav next" id="pgNext" aria-label="Next page">‹</button>
+      <div class="book" id="book" dir="rtl" lang="ar"></div>
+      <button class="pg-nav prev" id="pgPrev" aria-label="Previous page">›</button>
     </div>
 
     <div class="status" id="statusBar">
@@ -54,35 +49,58 @@
       <div id="diag" class="diag"></div>
     </div>
 
+    <div class="below">
+      <div class="panel" id="transPanel">
+        <h3><span data-t="translation">Translation</span> <small id="transRef"></small></h3>
+        <p id="transText" class="trans-text"></p>
+      </div>
+      <div class="panel" id="tafsirPanel">
+        <h3><span data-t="tafsir">Tafsir</span> <small id="tafsirRef"></small></h3>
+        <select id="tafsirSel" class="tafsir-sel"></select>
+        <div id="tafsirText" class="tafsir-text"></div>
+      </div>
+    </div>
+
+    <h2 class="section-title" data-t="controls">Controls</h2>
+
     <div class="listen" id="listenBar">
-      <button id="playBtn" class="play" aria-label="Listen"><svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg><span id="playLabel">Listen</span></button>
-      <label><span>Reciter</span><select id="reciterSel"></select></label>
-      <label class="small-sel"><span>Repeat ayah</span><select id="repeatSel"><option value="1">1×</option><option value="2">2×</option><option value="3">3×</option><option value="5">5×</option><option value="10">10×</option><option value="inf">∞</option></select></label>
-      <label class="small-sel"><span>Speed</span><select id="speedSel"><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select></label>
-      <label class="small-sel"><span>Stop at end of</span><select id="stopSel"><option value="ayah">Ayah</option><option value="page">Page</option><option value="quarter">Quarter (rub')</option><option value="hizb">Hizb</option><option value="surah" selected>Surah</option><option value="juz">Juz</option><option value="none">Don't stop</option></select></label>
-      <label class="small-sel"><span>Loop</span><select id="loopSel"><option value="0">Play once</option><option value="1">Loop forever ∞</option></select></label>
+      <button id="playBtn" class="play" aria-label="Listen"><svg viewBox="0 0 24 24"><path d="M7 4v16l13-8z"/></svg><span id="playLabel" data-t="listen">Listen</span></button>
+      <label><span data-t="reciter">Reciter</span><select id="reciterSel"></select></label>
+      <label class="vol"><span><span data-t="volume">Volume</span> <b id="volVal">100%</b></span><input type="range" id="volSel" min="0" max="200" step="5" value="100"></label>
+      <label class="small-sel"><span data-t="repeatAyah">Repeat ayah</span><select id="repeatSel"><option value="1">1×</option><option value="2">2×</option><option value="3">3×</option><option value="5">5×</option><option value="10">10×</option><option value="inf">∞</option></select></label>
+      <label class="small-sel"><span data-t="speed">Speed</span><select id="speedSel"><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option></select></label>
+      <label class="small-sel"><span data-t="stopAt">Stop at end of</span><select id="stopSel"><option value="ayah" data-t="uAyah">Ayah</option><option value="page" data-t="uPage">Page</option><option value="quarter" data-t="uQuarter">Quarter (rub')</option><option value="hizb" data-t="uHizb">Hizb</option><option value="surah" selected data-t="uSurah">Surah</option><option value="juz" data-t="uJuz">Juz</option><option value="none" data-t="uNone">Don't stop</option></select></label>
+      <label class="small-sel"><span data-t="loop">Loop</span><select id="loopSel"><option value="0" data-t="once">Play once</option><option value="1" data-t="forever">Loop forever ∞</option></select></label>
       <div id="playInfo" class="play-info"></div>
     </div>
 
-    <div class="book-wrap">
-      <button class="pg-nav next" id="pgNext" aria-label="Next page">‹</button>
-      <div class="book" id="book" dir="rtl" lang="ar"></div>
-      <button class="pg-nav prev" id="pgPrev" aria-label="Previous page">›</button>
+    <div class="toolbar">
+      <div class="pick">
+        <label><span data-t="surah">Surah</span><select id="surah"></select></label>
+        <label class="ayah-pick"><span data-t="ayah">Ayah</span><select id="fromAyah"></select></label>
+        <div class="pick-row">
+          <label><span data-t="juz">Juz</span><select id="juzSel"></select></label>
+          <label><span data-t="hizb">Hizb</span><select id="hizbSel"></select></label>
+          <label><span data-t="page">Page</span><select id="pageSel"></select></label>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat"><b id="sOk">0</b><span data-t="correct">Correct</span></div>
+        <div class="stat bad"><b id="sBad">0</b><span data-t="mistakes">Mistakes</span></div>
+        <div class="stat skip"><b id="sSkip">0</b><span data-t="skipped">Skipped</span></div>
+        <div class="stat"><b id="sPct">–</b><span data-t="accuracy">Accuracy</span></div>
+      </div>
     </div>
 
     <div class="below">
+      <div class="panel">
+        <h3><span data-t="mistakesSession">Mistakes this session</span> <small id="mistakeCount"></small></h3>
+        <ol id="mistakeList" class="mlist mgroups"></ol>
+        <p id="noMistakes" class="muted" data-t="noMistakes">No mistakes yet.</p>
+      </div>
       <div class="panel" id="hlogPanel" style="display:none">
         <h3>Harakat check log</h3>
         <ol id="hlog" class="hlog"></ol>
-      </div>
-      <div class="panel" id="transPanel">
-        <h3>Translation <small id="transRef"></small></h3>
-        <p id="transText" class="trans-text"></p>
-      </div>
-      <div class="panel">
-        <h3>Mistakes this session <small id="mistakeCount"></small></h3>
-        <ol id="mistakeList" class="mlist mgroups"></ol>
-        <p id="noMistakes" class="muted">No mistakes yet.</p>
       </div>
     </div>
 
@@ -92,7 +110,7 @@
       </button>
       <button id="micBtn" class="mic" aria-label="Start reciting">
         <svg viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4"/></svg>
-        <span id="micLabel">Start</span>
+        <span id="micLabel" data-t="start">Start</span>
       </button>
       <button id="reportBtn" class="round" title="Mistakes report" aria-label="Mistakes report">
         <svg viewBox="0 0 24 24"><path d="M9 4h6v3H9z"/><path d="M15 5h3v16H6V5h3"/><path d="M9 12h6M9 16h4"/></svg>
@@ -107,57 +125,71 @@
   <section id="view-history" class="view">
     <div class="panel"><div class="stats" id="totals"></div></div>
     <div class="panel">
-      <h3>Words you miss most often</h3>
+      <h3 data-t="weakWords">Words you miss most often</h3>
       <ol id="weakList" class="mlist"></ol>
     </div>
     <div class="panel">
-      <h3>Past sessions</h3>
+      <h3 data-t="pastSessions">Past sessions</h3>
       <div id="sessions"></div>
-      <button id="clearHist" class="btn-ghost">Clear history</button>
+      <button id="clearHist" class="btn-ghost" data-t="clearHistory">Clear history</button>
     </div>
   </section>
 
   <!-- SETTINGS -->
   <section id="view-settings" class="view">
     <div class="panel settings">
-      <label class="switch"><input type="checkbox" id="optTrans"><span>Show translation of the current ayah</span></label>
-      <label class="switch"><input type="checkbox" id="optSound"><span>Beep on mistake</span></label>
-      <label class="switch"><input type="checkbox" id="optVibrate"><span>Vibrate on mistake</span></label>
-      <label class="switch"><input type="checkbox" id="optHarakat"><span><b>Harakat &amp; tajweed check (beta)</b> — sends each phrase you recite to <i>your own</i> free Quran Muaalem server (a Hugging Face Space) which checks harakat, tajweed and letters. Results appear a few seconds after each pause.</span></label>
+      <label class="row"><span data-t="language">Language</span>
+        <select id="optLang">
+          <option value="en">English</option>
+          <option value="ar">العربية</option>
+          <option value="ckb">کوردی (سۆرانی)</option>
+        </select>
+      </label>
+      <label class="row"><span data-t="transLang">Translation language</span>
+        <select id="optTransLang">
+          <option value="en">English — Saheeh International</option>
+          <option value="ckb">کوردی — بورهان محەمەد ئەمین</option>
+        </select>
+      </label>
+      <label class="switch"><input type="checkbox" id="optTrans"><span data-t="optTrans">Show translation of the current ayah</span></label>
+      <label class="switch"><input type="checkbox" id="optTafsir"><span data-t="optTafsir">Show tafsir of the current ayah (downloaded per surah when you open it)</span></label>
+      <label class="switch"><input type="checkbox" id="optSound"><span data-t="optSound">Beep on mistake</span></label>
+      <label class="switch"><input type="checkbox" id="optVibrate"><span data-t="optVibrate">Vibrate on mistake</span></label>
+      <label class="switch"><input type="checkbox" id="optHarakat"><span><b>Harakat &amp; tajweed check (beta)</b> — sends each phrase you recite to <i>your own</i> free Quran Muaalem server (Google Colab) which checks harakat, tajweed and letters. Results appear a few seconds after each pause.</span></label>
       <div class="server-row">
-        <input type="url" id="optServer" placeholder="https://your-name-tilawa-muaalem.hf.space" autocomplete="off" spellcheck="false">
+        <input type="url" id="optServer" placeholder="https://….trycloudflare.com" autocomplete="off" spellcheck="false">
         <button id="testServer" class="btn-ghost" type="button">Test</button>
       </div>
       <p id="serverStatus" class="muted small"></p>
-      <label class="switch"><input type="checkbox" id="optReveal"><span>In memorization mode, reveal words I get wrong</span></label>
-      <label class="row"><span>Text size</span><input type="range" id="optFont" min="18" max="40" value="26"></label>
-      <label class="row"><span>Strictness</span>
+      <label class="switch"><input type="checkbox" id="optReveal"><span data-t="optReveal">In memorization mode, reveal words I get wrong</span></label>
+      <label class="row"><span data-t="textSize">Text size</span><input type="range" id="optFont" min="18" max="44" value="28"></label>
+      <label class="row"><span data-t="strictness">Strictness</span>
         <select id="optStrict">
-          <option value="0">Lenient (fewer false alarms)</option>
-          <option value="1">Normal</option>
-          <option value="2">Strict (exact words)</option>
+          <option value="0" data-t="lenient">Lenient (fewer false alarms)</option>
+          <option value="1" data-t="normal">Normal</option>
+          <option value="2" data-t="strict">Strict (exact words)</option>
         </select>
       </label>
-      <label class="row"><span>Speech engine</span>
+      <label class="row"><span data-t="engine">Speech engine</span>
         <select id="optEngine">
-          <option value="auto">Automatic</option>
-          <option value="browser">Browser (fast — Chrome, Edge, Safari)</option>
-          <option value="local">On-device Quran AI (works in Brave, Firefox; ~100 MB download)</option>
+          <option value="auto" data-t="auto">Automatic</option>
+          <option value="browser">Browser (Chrome, Edge, Safari)</option>
+          <option value="local">On-device Quran AI (Brave, Firefox; ~100 MB)</option>
         </select>
       </label>
-      <label class="row"><span>Theme</span>
+      <label class="row"><span data-t="theme">Theme</span>
         <select id="optTheme">
-          <option value="">Automatic</option>
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
+          <option value="" data-t="auto">Automatic</option>
+          <option value="light" data-t="light">Light</option>
+          <option value="dark" data-t="dark">Dark</option>
         </select>
       </label>
     </div>
     <div class="panel about">
       <h3>How it works</h3>
       <p>Choose a surah, press the microphone and recite. Each word turns <span class="ok">green</span> when it is correct, <span class="bad">red</span> when it is wrong and <span class="skip">orange</span> when you skip it. You can go back and repeat earlier ayat at any time; that is not counted as a mistake. Tap any word to start from there.</p>
-      <p>Speech is recognised by your browser's built-in speech service, so you need <b>Google Chrome</b>, Microsoft Edge or Safari, and an internet connection. In Brave, Firefox and other browsers without that service, the app automatically uses an <b>on-device Quran speech model</b> instead (a Whisper model trained on recitation by Tarteel AI). It downloads about 100&nbsp;MB once, runs entirely on your device, and checks each phrase when you pause. The app checks <b>words</b>; it cannot judge tajweed, and it may sometimes mishear a word.</p>
-      <p class="muted">Quran text: Uthmani script from The Noble Qur'an Encyclopedia (quranenc.com); translation Saheeh International, via the open <i>quran-json</i> dataset (CC BY-SA 4.0). Page layout of the Madani mushaf via <i>quran-meta</i> (MIT). Recitations from <a href="https://everyayah.com">EveryAyah.com</a>. The harakat &amp; tajweed check uses the open <a href="https://github.com/obadx/quran-muaalem">Quran Muaalem</a> model.</p>
+      <p>Speech is recognised by your browser's built-in speech service, so you need <b>Google Chrome</b>, Microsoft Edge or Safari, and an internet connection. In Brave, Firefox and other browsers without that service, the app automatically uses an <b>on-device Quran speech model</b> instead. It downloads about 100&nbsp;MB once and checks each phrase when you pause.</p>
+      <p class="muted">Quran text: Uthmani script from The Noble Qur'an Encyclopedia (quranenc.com); English translation Saheeh International, via the open <i>quran-json</i> dataset (CC BY-SA 4.0). Kurdish translation (Burhan Muhammad Amin) via the open <i>fawazahmed0/quran-api</i>. Tafsir texts via the open <i>spa5k/tafsir_api</i>. Page layout of the Madani mushaf via <i>quran-meta</i> (MIT). Recitations from <a href="https://everyayah.com">EveryAyah.com</a>. The harakat &amp; tajweed check uses the open <a href="https://github.com/obadx/quran-muaalem">Quran Muaalem</a> model.</p>
       <p><b>AI notice:</b> the speech recognition and the harakat &amp; tajweed check are AI and may make mistakes. This app is an aid only and is not a substitute for a proficient, authorised Quran teacher — the Quran is received through oral transmission (mushafahah).</p>
     </div>
   </section>
@@ -171,6 +203,6 @@
   </div>
 </div>
 
-<script src="app.js?v=18"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>

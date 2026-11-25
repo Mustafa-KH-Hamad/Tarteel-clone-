@@ -237,3 +237,29 @@ select{font:inherit;font-size:.95rem;padding:8px 10px;border-radius:10px;border:
 .play-info{width:100%;font-size:.85rem;color:var(--muted);min-height:1em}
 .w.playing{background:color-mix(in srgb,var(--gold) 22%,transparent);border-radius:4px}
 @media (max-width:560px){.listen label{flex:1 1 100%}.listen .small-sel{flex:1 1 30%}}
+
+/* ---------- v19: readability, Quran first, languages ---------- */
+html{font-size:17px}
+html[dir="rtl"] body{font-family:"Noto Naskh Arabic",Amiri,Inter,system-ui,sans-serif}
+html[dir="rtl"] .pick label span,html[dir="rtl"] .listen label span,html[dir="rtl"] .stat span{text-transform:none;letter-spacing:0;font-size:.85rem}
+.book-wrap{direction:ltr}
+.lang-sel{width:auto;background:#ffffff1f;color:#fff;border:1px solid #ffffff40;padding:6px 10px;font-size:.9rem}
+.lang-sel option{color:#000}
+.where-bar{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;justify-content:center;margin:4px 0 12px;font-size:.95rem;color:var(--muted)}
+.where-bar b{color:var(--frame);font-size:1.1rem;font-family:"Noto Naskh Arabic",Amiri,Inter,sans-serif}
+.where-bar span{padding:2px 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface)}
+.page-body{line-height:2.4;color:var(--paper-ink)}
+.status{margin:16px 0 4px}
+.section-title{font-size:1.05rem;margin:22px 4px 10px;color:var(--muted);font-weight:600;border-bottom:1px solid var(--line);padding-bottom:6px}
+.panel h3{font-size:1.05rem}
+.trans-text{font-size:1.08rem;line-height:1.85;color:var(--ink)}
+.trans-text[dir="rtl"],.tafsir-text[dir="rtl"]{font-family:"Noto Naskh Arabic",Amiri,serif;font-size:1.2rem;line-height:2}
+.tafsir-sel{margin-bottom:10px}
+.tafsir-text{font-size:1.05rem;line-height:1.85;white-space:pre-line;max-height:340px;overflow:auto;padding-inline-end:6px}
+.tafsir-text.muted{color:var(--muted)}
+.vol{flex:1 1 180px}
+.vol input{width:100%;accent-color:var(--gold);height:28px}
+.vol b{color:var(--ink);font-weight:600}
+select{font-size:1rem;padding:9px 10px}
+.settings label{font-size:1rem;line-height:1.5}
+@media (max-width:560px){html{font-size:16px}.top{padding:8px 10px}.tabs button{padding:6px 10px}.lang-sel{padding:5px 6px}}

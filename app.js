@@ -46,8 +46,124 @@ function same(expKey, heardKey) {
 }
 
 /* ---------- Settings ---------- */
-const settings = Object.assign({ trans: false, sound: true, vibrate: true, reveal: true, font: 26, strict: 1, memo: false, theme: "", engine: "auto", harakat: false, server: "" },
+const settings = Object.assign({ trans: false, sound: true, vibrate: true, reveal: true, font: 28, strict: 1, memo: false, theme: "", engine: "auto", harakat: false, server: "", lang: "", transLang: "", tafsir: true, tafsirEd: "", vol: 100 },
   store.get("settings", {}));
+
+/* ---------- Languages (English / Arabic / Kurdish Sorani) ---------- */
+const I18N = {
+  en: {},
+  ar: { appName: "تلاوة", appSub: "المصحح", tabQuran: "المصحف", tabHistory: "السجل", tabSettings: "الإعدادات",
+    translation: "الترجمة", tafsir: "التفسير", controls: "أدوات التلاوة والاستماع", listen: "استماع", pause: "إيقاف مؤقت",
+    reciter: "القارئ", volume: "مستوى الصوت", repeatAyah: "تكرار الآية", speed: "السرعة", stopAt: "التوقف عند نهاية",
+    uAyah: "الآية", uPage: "الصفحة", uQuarter: "الربع", uHizb: "الحزب", uSurah: "السورة", uJuz: "الجزء", uNone: "بدون توقف",
+    loop: "التكرار", once: "مرة واحدة", forever: "تكرار دائم ∞", surah: "السورة", ayah: "الآية", juz: "الجزء", hizb: "الحزب", page: "الصفحة",
+    correct: "صحيح", mistakes: "أخطاء", skipped: "متروك", accuracy: "الدقة", mistakesSession: "أخطاء هذه الجلسة", noMistakes: "لا أخطاء حتى الآن.",
+    start: "ابدأ", stop: "توقف", weakWords: "الكلمات التي تخطئ فيها كثيرًا", pastSessions: "الجلسات السابقة", clearHistory: "مسح السجل",
+    language: "لغة الواجهة", transLang: "لغة الترجمة", optTrans: "إظهار ترجمة الآية الحالية", optTafsir: "إظهار تفسير الآية الحالية (يُحمَّل لكل سورة عند فتحها)",
+    optSound: "صوت تنبيه عند الخطأ", optVibrate: "اهتزاز عند الخطأ", optReveal: "في وضع الحفظ، أظهر الكلمات التي أخطئ فيها",
+    textSize: "حجم الخط", strictness: "درجة الدقة", lenient: "متساهل", normal: "عادي", strict: "صارم (كلمات مطابقة)",
+    engine: "محرك التعرف على الصوت", theme: "المظهر", auto: "تلقائي", light: "فاتح", dark: "داكن",
+    ready: "اختر سورة واضغط على الميكروفون للبدء.", loadingTafsir: "جارٍ تحميل التفسير…", tafsirFail: "تعذّر تحميل التفسير. تحقق من الاتصال بالإنترنت.",
+    noTafsir: "لا يوجد تفسير لهذه الآية في هذا الكتاب.", loading: "جارٍ التحميل…" },
+  ckb: { appName: "تیلاوە", appSub: "ڕاستکەرەوە", tabQuran: "قورئان", tabHistory: "مێژوو", tabSettings: "ڕێکخستنەکان",
+    translation: "وەرگێڕان", tafsir: "تەفسیر", controls: "کۆنترۆڵی خوێندنەوە و گوێگرتن", listen: "گوێگرتن", pause: "وەستان",
+    reciter: "قورئانخوێن", volume: "بەرزی دەنگ", repeatAyah: "دووبارەکردنەوەی ئایەت", speed: "خێرایی", stopAt: "وەستان لە کۆتایی",
+    uAyah: "ئایەت", uPage: "لاپەڕە", uQuarter: "چارەک", uHizb: "حیزب", uSurah: "سوورەت", uJuz: "جوزء", uNone: "بێ وەستان",
+    loop: "دووبارەبوونەوە", once: "یەک جار", forever: "بەردەوام ∞", surah: "سوورەت", ayah: "ئایەت", juz: "جوزء", hizb: "حیزب", page: "لاپەڕە",
+    correct: "ڕاست", mistakes: "هەڵە", skipped: "بازدراو", accuracy: "وردی", mistakesSession: "هەڵەکانی ئەم دانیشتنە", noMistakes: "هێشتا هیچ هەڵەیەک نییە.",
+    start: "دەستپێکردن", stop: "وەستان", weakWords: "ئەو وشانەی زۆرتر تێیاندا هەڵە دەکەیت", pastSessions: "دانیشتنە پێشووەکان", clearHistory: "سڕینەوەی مێژوو",
+    language: "زمانی ڕووکار", transLang: "زمانی وەرگێڕان", optTrans: "پیشاندانی وەرگێڕانی ئایەتی ئێستا", optTafsir: "پیشاندانی تەفسیری ئایەتی ئێستا (بۆ هەر سوورەتێک کاتی کردنەوەی دادەبەزێت)",
+    optSound: "دەنگی ئاگادارکردنەوە لە کاتی هەڵە", optVibrate: "لەرینەوە لە کاتی هەڵە", optReveal: "لە دۆخی لەبەرکردندا، ئەو وشانەی هەڵەم تێدا کردوون پیشان بدە",
+    textSize: "قەبارەی نووسین", strictness: "ئاستی وردی", lenient: "نەرم", normal: "ئاسایی", strict: "توند (وشەی تەواو)",
+    engine: "بزوێنەری ناسینەوەی دەنگ", theme: "ڕووکار", auto: "خۆکار", light: "ڕووناک", dark: "تاریک",
+    ready: "سوورەتێک هەڵبژێرە و دوگمەی مایکرۆفۆن دابگرە بۆ دەستپێکردن.", loadingTafsir: "تەفسیر دادەبەزێت…", tafsirFail: "نەتوانرا تەفسیر داببەزێنرێت. پەیوەندی ئینتەرنێت بپشکنە.",
+    noTafsir: "بۆ ئەم ئایەتە لەم تەفسیرەدا هیچ نییە.", loading: "باردەکرێت…" },
+};
+const EN = {};
+document.querySelectorAll("[data-t]").forEach(el => EN[el.dataset.t] = el.textContent);
+Object.assign(EN, { pause: "Pause", stop: "Stop", ready: "Choose a surah and press the microphone to begin.", loadingTafsir: "Loading tafsir…",
+  tafsirFail: "Could not load the tafsir. Check your internet connection.", noTafsir: "This tafsir has no entry for this ayah.", loading: "Loading…" });
+I18N.en = EN;
+const T = k => (I18N[settings.lang] || EN)[k] || EN[k] || k;
+function applyLang() {
+  const l = I18N[settings.lang] ? settings.lang : "en", rtl = l !== "en";
+  document.documentElement.lang = l; document.documentElement.dir = rtl ? "rtl" : "ltr";
+  document.querySelectorAll("[data-t]").forEach(el => el.textContent = T(el.dataset.t));
+  $("langSel").value = l; $("optLang").value = l;
+  $("playLabel").textContent = T(playing ? "pause" : "listen");
+  $("micLabel").textContent = T(listening ? "stop" : "start");
+  if (QURAN && words[ptr]) syncSelects();
+  if (Object.values(I18N).some(d => d.ready === $("msg").textContent)) msg(T("ready"));
+}
+
+/* ---------- Kurdish translation (downloaded per surah, on demand) ---------- */
+const kuCache = new Map();
+function kurdishSurah(s) {
+  if (!kuCache.has(s)) {
+    const p = fetch(`https://cdn.jsdelivr.net/gh/fawazahmed0/quran-api@1/editions/kur-burhanmuhammada/${s + 1}.json`)
+      .then(r => { if (!r.ok) throw 0; return r.json(); }).then(d => d.chapter.map(v => v.text));
+    kuCache.set(s, p); p.catch(() => kuCache.delete(s));
+  }
+  return kuCache.get(s);
+}
+
+/* ---------- Tafsir (downloaded per surah when you open it, kept for this session) ---------- */
+const TAFSIRS = [
+  ["kurd-tafsir-rebar", "کوردی — تەفسیری ڕێبەر", "ckb"],
+  ["kurdish-mokhtasar", "کوردی — کورتەی تەفسیر (المختصر)", "ckb"],
+  ["ar-tafsir-al-mukhtasar", "العربية — المختصر في التفسير", "ar"],
+  ["ar-tafseer-al-saddi", "العربية — تفسير السعدي", "ar"],
+  ["ar-tafsir-ibn-kathir", "العربية — تفسير ابن كثير", "ar"],
+  ["ar-tafsir-al-jalalayn", "العربية — تفسير الجلالين", "ar"],
+  ["en-tafsir-al-mukhtasar", "English — Al-Mukhtasar", "en"],
+  ["en-tafisr-ibn-kathir", "English — Ibn Kathir (abridged)", "en"],
+  ["en-al-jalalayn", "English — Al-Jalalayn", "en"],
+];
+const tafCache = new Map();
+function tafsirSurah(ed, s) {
+  const k = ed + "/" + s;
+  if (!tafCache.has(k)) {
+    const p = fetch(`https://cdn.jsdelivr.net/gh/spa5k/tafsir_api@main/tafsir/${ed}/${s + 1}.json`)
+      .then(r => { if (!r.ok) throw 0; return r.json(); })
+      .then(arr => { const m = {}; for (const x of arr) m[x.ayah] = (m[x.ayah] ? m[x.ayah] + "\n\n" : "") + x.text; return m; });
+    tafCache.set(k, p);
+    if (tafCache.size > 12) tafCache.delete(tafCache.keys().next().value);
+  }
+  return tafCache.get(k);
+}
+const tafAyahCache = new Map();
+function tafsirAyah(ed, s, a) {
+  const k = `${ed}/${s + 1}/${a + 1}`;
+  if (!tafAyahCache.has(k)) {
+    const p = fetch(`https://cdn.jsdelivr.net/gh/spa5k/tafsir_api@main/tafsir/${k}.json`)
+      .then(r => { if (!r.ok) throw 0; return r.json(); }).then(d => d.text);
+    tafAyahCache.set(k, p); p.catch(() => tafAyahCache.delete(k));
+  }
+  return tafAyahCache.get(k);
+}
+let tafReq = 0;
+function showTafsir() {
+  $("tafsirPanel").style.display = settings.tafsir ? "" : "none";
+  if (!settings.tafsir || !QURAN || !words[ptr]) return;
+  const w = words[Math.min(ptr, words.length - 1)], ed = settings.tafsirEd, id = ++tafReq;
+  const lang = (TAFSIRS.find(t => t[0] === ed) || TAFSIRS[0])[2], box = $("tafsirText");
+  box.dir = lang === "en" ? "ltr" : "rtl"; box.lang = lang;
+  $("tafsirRef").textContent = `· ${QURAN[w.s].t} ${w.s + 1}:${w.a + 1}`;
+  box.textContent = T("loadingTafsir"); box.classList.add("muted");
+  tafsirSurah(ed, w.s).then(m => {
+    if (id !== tafReq) return;
+    box.classList.remove("muted");
+    // Some tafsirs explain several ayat in one entry: walk back to the entry that covers this ayah.
+    let a = w.a + 1; while (a > 1 && !m[a]) a--;
+    box.textContent = m[a] || T("noTafsir");
+  }).catch(() =>      // very long surahs are too big for one file on the CDN: fetch just this ayah instead
+    tafsirAyah(ed, w.s, w.a).then(t => { if (id === tafReq) { box.classList.remove("muted"); box.textContent = t || T("noTafsir"); } })
+  ).catch(() => { if (id === tafReq) box.textContent = T("tafsirFail"); });
+}
+
+if (!settings.lang) settings.lang = /^ar/.test(navigator.language) ? "ar" : /^(ckb|ku)/.test(navigator.language) ? "ckb" : "en";
+if (!settings.transLang) settings.transLang = settings.lang === "ckb" ? "ckb" : "en";
+if (!settings.tafsirEd) settings.tafsirEd = (TAFSIRS.find(t => t[2] === settings.lang) || TAFSIRS[0])[0];
 function saveSettings() { store.set("settings", settings); applySettings(); }
 function applySettings() {
   const root = document.documentElement;
@@ -59,7 +175,9 @@ function applySettings() {
   $("optTrans").checked = settings.trans; $("optSound").checked = settings.sound;
   $("optVibrate").checked = settings.vibrate; $("optReveal").checked = settings.reveal;
   $("optFont").value = settings.font; $("optStrict").value = settings.strict; $("optTheme").value = settings.theme; $("optEngine").value = settings.engine; $("optHarakat").checked = settings.harakat; $("optServer").value = settings.server || "";
-  showTranslation();
+  $("optTafsir").checked = settings.tafsir; $("optTransLang").value = settings.transLang; $("tafsirSel").value = settings.tafsirEd;
+  $("volSel").value = settings.vol; $("volVal").textContent = settings.vol + "%"; if (gainNode) gainNode.gain.value = settings.vol / 100;
+  applyLang(); showTranslation(); showTafsir();
 }
 
 /* ---------- Quran model ---------- */
@@ -211,6 +329,7 @@ function nextItem(it) {
 // Gapless playback with the Web Audio API: every ayah is downloaded and decoded while the previous
 // one plays, silence at both ends is trimmed, and the next ayah is scheduled to start exactly when
 // the previous one ends.
+let gainNode = null;
 let actx = null, playToken = 0, nextStart = 0, sources = [];
 const bufCache = new Map();
 function getBuf(url) {
@@ -235,7 +354,7 @@ async function schedule(it, token) {
   catch { if (token === playToken) { msg("Could not load the recitation. Check your internet connection.", true); stopPlaying(); } return; }
   if (token !== playToken) return;
   const rate = +$("speedSel").value, src = actx.createBufferSource();
-  src.buffer = b.buffer; src.playbackRate.value = rate; src.connect(actx.destination);
+  src.buffer = b.buffer; src.playbackRate.value = rate; src.connect(gainNode);
   const when = Math.max(actx.currentTime + 0.03, nextStart);
   src.start(when, b.off, b.dur);
   nextStart = when + b.dur / rate;
@@ -260,11 +379,11 @@ function showPlaying(it) {
 }
 function startPlaying(fromG) {
   stopListening();                       // don't let the microphone hear the recitation
-  actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+  if (!actx) { actx = new (window.AudioContext || window.webkitAudioContext)(); gainNode = actx.createGain(); gainNode.gain.value = settings.vol / 100; gainNode.connect(actx.destination); }
   actx.resume();
   const g = fromG != null ? fromG : words[Math.min(ptr, words.length - 1)].g;
   playing = true; const token = ++playToken; nextStart = 0;
-  $("playLabel").textContent = "Pause"; $("playBtn").classList.add("on");
+  $("playLabel").textContent = T("pause"); $("playBtn").classList.add("on");
   $("playBtn").querySelector("svg").innerHTML = '<path d="M7 4h4v16H7zM13 4h4v16h-4z"/>';
   $("playInfo").textContent = "Loading…";
   schedule(firstItem(g), token);
@@ -274,7 +393,7 @@ function stopPlaying() {
   playing = false; playToken++;
   for (const src of sources) { try { src.stop(); } catch {} }
   sources = [];
-  $("playLabel").textContent = "Listen"; $("playBtn").classList.remove("on");
+  $("playLabel").textContent = T("listen"); $("playBtn").classList.remove("on");
   $("playBtn").querySelector("svg").innerHTML = '<path d="M7 4v16l13-8z"/>';
   const g = playG; setPlayG(-1);
   $("playInfo").textContent = "";
@@ -313,6 +432,7 @@ function syncSelects() {
   if (+$("surah").value !== w.s) { $("surah").value = w.s; fillAyahSelect(); }
   $("fromAyah").value = w.a;
   syncGoto(w.g);
+  $("whereBar").innerHTML = `<b>${w.s + 1}. ${settings.lang === "en" ? QURAN[w.s].t : QURAN[w.s].n}</b><span>${T("ayah")} ${w.a + 1}</span><span>${T("juz")} ${juzOf(w.g)}</span><span>${T("page")} ${pageOfAyah[w.g]}</span>`;
 }
 
 function paint(scroll) {
@@ -322,14 +442,19 @@ function paint(scroll) {
   const tot = stats.ok + stats.bad + stats.skip;
   $("sPct").textContent = tot ? Math.round(100 * stats.ok / tot) + "%" : "–";
   $("noMistakes").style.display = mistakes.length ? "none" : "block";
-  showTranslation();
+  showTranslation(); showTafsir();
 }
 
 function showTranslation() {
   if (!settings.trans || !QURAN || !words[ptr]) return;
   const w = words[Math.min(ptr, words.length - 1)];
   $("transRef").textContent = `· ${QURAN[w.s].t} ${w.s + 1}:${w.a + 1}`;
-  $("transText").textContent = QURAN[w.s].v[w.a][1];
+  const box = $("transText");
+  if (settings.transLang === "ckb") {
+    box.dir = "rtl"; box.lang = "ckb"; box.textContent = T("loading");
+    kurdishSurah(w.s).then(v => { const x = words[Math.min(ptr, words.length - 1)]; if (x.s === w.s) box.textContent = v[x.a] || ""; })
+      .catch(() => { box.dir = "ltr"; box.textContent = QURAN[w.s].v[w.a][1]; });
+  } else { box.dir = "ltr"; box.lang = "en"; box.textContent = QURAN[w.s].v[w.a][1]; }
 }
 function msg(t, warn) { $("msg").textContent = t; $("msg").className = "msg" + (warn ? " warn" : ""); }
 
@@ -630,7 +755,7 @@ function getWorker() {
 let pendingStart = false;
 
 function setMicUI(on) {
-  $("micLabel").textContent = on ? "Stop" : "Start";
+  $("micLabel").textContent = T(on ? "stop" : "start");
   $("micBtn").classList.toggle("on", on); $("dot").classList.toggle("on", on);
 }
 
@@ -977,6 +1102,16 @@ function bind() {
   $("reportBtn").onclick = () => showReport(currentSession());
   $("summaryClose").onclick = () => $("summary").classList.add("hidden");
   $("clearHist").onclick = () => { if (confirm("Delete all history?")) { store.set("history", []); renderHistory(); } };
+  $("tafsirSel").innerHTML = TAFSIRS.map(([id, n]) => `<option value="${id}">${n}</option>`).join("");
+  $("tafsirSel").onchange = e => { settings.tafsirEd = e.target.value; saveSettings(); };
+  $("optTafsir").onchange = e => { settings.tafsir = e.target.checked; saveSettings(); };
+  $("optTransLang").onchange = e => { settings.transLang = e.target.value; saveSettings(); };
+  const setLang = v => { settings.lang = v; settings.transLang = v === "ckb" ? "ckb" : v === "en" ? "en" : settings.transLang;
+    settings.tafsirEd = (TAFSIRS.find(t => t[2] === v) || TAFSIRS[0])[0]; saveSettings(); };
+  $("langSel").onchange = e => setLang(e.target.value);
+  $("optLang").onchange = e => setLang(e.target.value);
+  $("volSel").oninput = e => { settings.vol = +e.target.value; $("volVal").textContent = settings.vol + "%"; if (gainNode) gainNode.gain.value = settings.vol / 100; };
+  $("volSel").onchange = () => saveSettings();
   $("optTrans").onchange = e => { settings.trans = e.target.checked; saveSettings(); };
   $("optSound").onchange = e => { settings.sound = e.target.checked; saveSettings(); };
   $("optVibrate").onchange = e => { settings.vibrate = e.target.checked; saveSettings(); };
@@ -1002,7 +1137,7 @@ async function init() {
   setStart(typeof last === "number" ? last : 0);
   renderHistory();
   if (useLocal()) msg("This browser will use the on-device Quran speech model (downloads about 100 MB the first time). Press the microphone to begin.");
-  else msg("Choose a surah and press the microphone to begin.");
+  else msg(T("ready"));
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
 }
 init();

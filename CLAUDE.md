@@ -47,6 +47,12 @@ name, logo or look in the app (trademark); "Tarteel-clone-" is only the repo nam
   WebGPU only if an adapter exists, else WASM). Phrase-based (after pauses), slower, less exact.
   The user said "forget Brave for now".
 
+## v19 additions
+- UI languages English / Arabic / Kurdish Sorani (`I18N` in app.js, `data-t` attributes in index.html; ar/ckb set dir=rtl).
+- Translation: English (Saheeh, local) or Kurdish (Burhan Muhammad Amin, fetched per surah from jsdelivr fawazahmed0/quran-api `kur-burhanmuhammada`).
+- Tafsir panel: fetched per surah on demand from jsdelivr `spa5k/tafsir_api` (Kurdish Rebar/Mukhtasar, Arabic Mukhtasar/Sa'di/Ibn Kathir/Jalalayn, English ...); big surah files 403 on the CDN → falls back to per-ayah files. Cached in memory for the session.
+- Volume slider 0–200% (Web Audio GainNode). Layout: mushaf first, then translation/tafsir, then controls.
+
 ## Harakat & tajweed check (beta) — how it works
 - Google's engine returns words without harakat, so it can't check them.
 - A Quran-trained Whisper "auto-corrects" to the true text, so it also can't catch harakat
@@ -93,7 +99,7 @@ name, logo or look in the app (trademark); "Tarteel-clone-" is only the repo nam
 
 ## Conventions & gotchas
 - Bump cache-busting together on every front-end change: `?v=N` on style.css/app.js in index.html
-  and `CACHE = "tilawa-vN"` in sw.js (current: v18). Without it users get old JS with new HTML.
+  and `CACHE = "tilawa-vN"` in sw.js (current: v19). Without it users get old JS with new HTML.
 - Service worker is network-first and ignores cross-origin requests.
 - Tests are ad-hoc Playwright scripts (Chromium preinstalled) that mock `SpeechRecognition` and call
   `feed()`, `jumpTo()`, `applyServerResult()` etc. via `page.evaluate`; serve with
